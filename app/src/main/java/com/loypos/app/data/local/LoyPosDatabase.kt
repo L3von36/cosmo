@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.loypos.app.core.DemoCatalog
 import com.loypos.app.core.nowMs
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 @Database(
     entities = [
         UserEntity::class,
+        BackOfficeUserEntity::class,
         BranchEntity::class,
         CategoryEntity::class,
         ProductEntity::class,
@@ -27,7 +29,7 @@ import kotlinx.coroutines.launch
         CashMovementEntity::class,
         SettingEntity::class,
     ],
-    version = 3,
+    version = 5,
     exportSchema = false,
 )
 abstract class LoyPosDatabase : RoomDatabase() {
@@ -36,12 +38,41 @@ abstract class LoyPosDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun saleDao(): SaleDao
     abstract fun saleItemDao(): SaleItemDao
+    abstract fun backOfficeUserDao(): BackOfficeUserDao
 
     companion object {
         const val DB_NAME = "loypos.db"
 
         @Volatile
         private var INSTANCE: LoyPosDatabase? = null
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_products_sku ON products(sku)")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS backoffice_users (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        email TEXT NOT NULL,
+                        full_name TEXT NOT NULL,
+                        shop_name TEXT NOT NULL,
+                        password_hash TEXT NOT NULL,
+                        salt TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        active INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_backoffice_users_email ON backoffice_users(email)")
+            }
+        }
 
         fun getInstance(context: Context): LoyPosDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -50,6 +81,7 @@ abstract class LoyPosDatabase : RoomDatabase() {
                     LoyPosDatabase::class.java,
                     DB_NAME,
                 )
+                    .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {

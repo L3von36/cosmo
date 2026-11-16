@@ -67,6 +67,7 @@ import com.loypos.app.ui.components.ConfirmDialog
 import com.loypos.app.ui.components.EmptyState
 import com.loypos.app.ui.components.GroupCard
 import com.loypos.app.ui.components.PillBadge
+import com.loypos.app.ui.components.ReceiptPdfPreviewSheet
 import com.loypos.app.ui.components.TopSyncIconButton
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
@@ -216,6 +217,7 @@ fun ReceiptDetailScreen(
         return
     }
     var showRefundDialog by remember { mutableStateOf(false) }
+    var showPdfPreview by remember { mutableStateOf(false) }
     val r = receiptWithLines.receipt
     val sym = data.settings.currencySymbol
     val branch = data.branches.firstOrNull { it.id == r.branchId }
@@ -227,6 +229,14 @@ fun ReceiptDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { showPdfPreview = true },
+                        modifier = Modifier.size(48.dp).testTag("receipt_detail_top_pdf_preview"),
+                    ) {
+                        Icon(Icons.Outlined.PictureAsPdf, contentDescription = "Preview Receipt PDF", tint = LoyGreen)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
@@ -335,12 +345,12 @@ fun ReceiptDetailScreen(
                     Text("Share")
                 }
                 OutlinedButton(
-                    onClick = { viewModel.shareReceiptPdf(receiptWithLines) },
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    onClick = { showPdfPreview = true },
+                    modifier = Modifier.weight(1f).height(50.dp).testTag("receipt_detail_pdf_preview_button"),
                 ) {
                     Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Receipt PDF")
+                    Text("Preview PDF")
                 }
             }
 
@@ -354,6 +364,14 @@ fun ReceiptDetailScreen(
                 }
             }
         }
+    }
+
+    if (showPdfPreview) {
+        ReceiptPdfPreviewSheet(
+            viewModel = viewModel,
+            receiptWithLines = receiptWithLines,
+            onDismiss = { showPdfPreview = false },
+        )
     }
 
     if (showRefundDialog) {

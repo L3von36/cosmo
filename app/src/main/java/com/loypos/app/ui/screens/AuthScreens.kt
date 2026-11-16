@@ -1,24 +1,30 @@
 package com.loypos.app.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material.icons.outlined.PersonOutline
@@ -27,11 +33,16 @@ import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +53,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -51,7 +61,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.loypos.app.ui.AppWorkspace
 import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.theme.BackOfficeNavy
+import com.loypos.app.ui.theme.BackOfficeSlate
+import com.loypos.app.ui.theme.BackOfficeTeal
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyError
 import com.loypos.app.ui.theme.LoyGreen
@@ -98,8 +112,19 @@ fun SplashScreen() {
 fun AuthGateScreen(
     viewModel: LoyPosViewModel,
     hasAnyUser: Boolean,
+    hasAnyBackOfficeUser: Boolean,
+    initialWorkspace: AppWorkspace = AppWorkspace.POS,
 ) {
-    var showSignUp by remember(hasAnyUser) { mutableStateOf(!hasAnyUser) }
+    var workspace by remember(initialWorkspace) { mutableStateOf(initialWorkspace) }
+    var showSignUpPos by remember(hasAnyUser) { mutableStateOf(!hasAnyUser) }
+    var showSignUpBo by remember(hasAnyBackOfficeUser) { mutableStateOf(!hasAnyBackOfficeUser) }
+
+    val isBackOffice = workspace == AppWorkspace.BACK_OFFICE
+    val headerBrush = if (isBackOffice) {
+        Brush.linearGradient(listOf(BackOfficeNavy, BackOfficeSlate))
+    } else {
+        Brush.linearGradient(listOf(LoyGreen, LoyGreenAccent))
+    }
 
     Column(
         modifier = Modifier
@@ -111,9 +136,9 @@ fun AuthGateScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(LoyGreen, LoyGreenAccent)))
+                .background(headerBrush)
                 .statusBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 30.dp),
+                .padding(horizontal = 24.dp, vertical = 28.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -127,25 +152,31 @@ fun AuthGateScreen(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Outlined.PointOfSale,
-                            contentDescription = "LoyPOS logo",
+                            imageVector = if (isBackOffice) Icons.Outlined.AdminPanelSettings else Icons.Outlined.PointOfSale,
+                            contentDescription = if (isBackOffice) "Back Office logo" else "LoyPOS logo",
                             tint = Color.White,
                         )
                     }
                 }
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    text = if (showSignUp) "Set up your shop" else "Welcome back",
+                    text = when {
+                        isBackOffice && showSignUpBo -> "Set up Back Office"
+                        isBackOffice -> "Back Office Portal"
+                        showSignUpPos -> "Set up your shop"
+                        else -> "Welcome back"
+                    },
                     style = MaterialTheme.typography.headlineSmall,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = if (showSignUp) {
-                        "Create your owner account to start selling offline-first with 300 ready items."
-                    } else {
-                        "Sign in as owner or seller to open the register."
+                    text = when {
+                        isBackOffice && showSignUpBo -> "Create a dedicated Back Office admin login separate from the POS register."
+                        isBackOffice -> "Sign in with your Back Office credentials to manage analytics, inventory, staff, and branches."
+                        showSignUpPos -> "Create your owner account to start selling offline-first with 300 ready items."
+                        else -> "Sign in as owner or seller to open the POS register."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.9f),
@@ -160,23 +191,398 @@ fun AuthGateScreen(
                 .padding(20.dp),
             contentAlignment = Alignment.TopCenter,
         ) {
-            Surface(
+            Column(
                 modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = Color.White,
-                tonalElevation = 1.dp,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                if (showSignUp) {
-                    SignUpForm(
-                        viewModel = viewModel,
-                        onSwitchToSignIn = { showSignUp = false },
-                    )
-                } else {
-                    LoginForm(
-                        viewModel = viewModel,
-                        onSwitchToSignUp = { showSignUp = true },
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = !isBackOffice,
+                        onClick = { workspace = AppWorkspace.POS },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2),
+                        icon = {
+                            Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        modifier = Modifier.testTag("auth_mode_pos"),
+                    ) {
+                        Text("POS Register")
+                    }
+                    SegmentedButton(
+                        selected = isBackOffice,
+                        onClick = { workspace = AppWorkspace.BACK_OFFICE },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2),
+                        icon = {
+                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        modifier = Modifier.testTag("auth_mode_backoffice"),
+                    ) {
+                        Text("Back Office")
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White,
+                    tonalElevation = 1.dp,
+                ) {
+                    if (isBackOffice) {
+                        if (showSignUpBo) {
+                            BackOfficeSignUpForm(
+                                viewModel = viewModel,
+                                hasExistingAccount = hasAnyBackOfficeUser,
+                                onSwitchToSignIn = { showSignUpBo = false },
+                            )
+                        } else {
+                            BackOfficeLoginForm(
+                                viewModel = viewModel,
+                                onSwitchToSignUp = { showSignUpBo = true },
+                            )
+                        }
+                    } else {
+                        if (showSignUpPos) {
+                            SignUpForm(
+                                viewModel = viewModel,
+                                onSwitchToSignIn = { showSignUpPos = false },
+                            )
+                        } else {
+                            LoginForm(
+                                viewModel = viewModel,
+                                onSwitchToSignUp = { showSignUpPos = true },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BackOfficeAuthScreen(
+    viewModel: LoyPosViewModel,
+    hasAnyBackOfficeUser: Boolean,
+    canReturnToPos: Boolean,
+    storeName: String,
+) {
+    if (canReturnToPos) {
+        BackHandler { viewModel.switchToPos() }
+    }
+
+    var showSignUp by remember(hasAnyBackOfficeUser) { mutableStateOf(!hasAnyBackOfficeUser) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LoyBackground)
+            .imePadding()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Brush.linearGradient(listOf(BackOfficeNavy, BackOfficeSlate)))
+                .statusBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 26.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 460.dp)
+                    .align(Alignment.CenterStart),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color.White.copy(alpha = 0.16f),
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.AdminPanelSettings,
+                                contentDescription = "Back Office Auth",
+                                tint = Color.White,
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = BackOfficeTeal,
+                    ) {
+                        Text(
+                            text = "BACK OFFICE AUTH",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = if (showSignUp) "Set up Back Office Admin" else "$storeName · Back Office",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (showSignUp) {
+                        "Create a dedicated Back Office password separate from POS register accounts."
+                    } else {
+                        "Authenticate to access Back Office dashboards, profit margins, stock controls, and admin settings."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.88f),
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(20.dp),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White,
+                    tonalElevation = 1.dp,
+                ) {
+                    if (showSignUp) {
+                        BackOfficeSignUpForm(
+                            viewModel = viewModel,
+                            hasExistingAccount = hasAnyBackOfficeUser,
+                            initialShopName = storeName,
+                            onSwitchToSignIn = { showSignUp = false },
+                        )
+                    } else {
+                        BackOfficeLoginForm(
+                            viewModel = viewModel,
+                            onSwitchToSignUp = { showSignUp = true },
+                        )
+                    }
+                }
+
+                if (canReturnToPos) {
+                    OutlinedButton(
+                        onClick = { viewModel.switchToPos() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("backoffice_auth_return_pos"),
+                    ) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Return to POS Register")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackOfficeLoginForm(
+    viewModel: LoyPosViewModel,
+    onSwitchToSignUp: () -> Unit,
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var showPwd by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier.padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it; error = null },
+            label = { Text("Back Office Email") },
+            leadingIcon = { Icon(Icons.Outlined.MailOutline, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("bo_login_email_input"),
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; error = null },
+            label = { Text("Back Office Password") },
+            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+            trailingIcon = {
+                IconButton(onClick = { showPwd = !showPwd }) {
+                    Icon(
+                        if (showPwd) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        contentDescription = if (showPwd) "Hide password" else "Show password",
                     )
                 }
+            },
+            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("bo_login_password_input"),
+        )
+
+        if (error != null) {
+            Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Button(
+            onClick = {
+                busy = true
+                error = null
+                viewModel.signInBackOffice(email, password) { err ->
+                    busy = false
+                    error = err
+                }
+            },
+            enabled = !busy,
+            colors = ButtonDefaults.buttonColors(containerColor = BackOfficeNavy, contentColor = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .testTag("bo_login_button"),
+        ) {
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+            } else {
+                Text("Unlock Back Office")
+            }
+        }
+
+        TextButton(
+            onClick = onSwitchToSignUp,
+            modifier = Modifier.align(Alignment.CenterHorizontally).testTag("bo_switch_to_signup"),
+        ) {
+            Text("Create a Back Office admin account", color = BackOfficeTeal)
+        }
+    }
+}
+
+@Composable
+private fun BackOfficeSignUpForm(
+    viewModel: LoyPosViewModel,
+    hasExistingAccount: Boolean,
+    initialShopName: String = "",
+    onSwitchToSignIn: () -> Unit,
+) {
+    var fullName by remember { mutableStateOf("") }
+    var shopName by remember { mutableStateOf(initialShopName) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var showPwd by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier.padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OutlinedTextField(
+            value = fullName,
+            onValueChange = { fullName = it; error = null },
+            label = { Text("Admin / Manager name") },
+            leadingIcon = { Icon(Icons.Outlined.PersonOutline, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("bo_signup_name_input"),
+        )
+        if (initialShopName.isEmpty()) {
+            OutlinedTextField(
+                value = shopName,
+                onValueChange = { shopName = it; error = null },
+                label = { Text("Shop name (optional)") },
+                leadingIcon = { Icon(Icons.Outlined.Storefront, contentDescription = null) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("bo_signup_shop_input"),
+            )
+        }
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it; error = null },
+            label = { Text("Back Office Email") },
+            leadingIcon = { Icon(Icons.Outlined.MailOutline, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("bo_signup_email_input"),
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; error = null },
+            label = { Text("Password (min 8 characters)") },
+            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+            trailingIcon = {
+                IconButton(onClick = { showPwd = !showPwd }) {
+                    Icon(
+                        if (showPwd) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        contentDescription = if (showPwd) "Hide password" else "Show password",
+                    )
+                }
+            },
+            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("bo_signup_password_input"),
+        )
+        OutlinedTextField(
+            value = confirm,
+            onValueChange = { confirm = it; error = null },
+            label = { Text("Confirm password") },
+            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("bo_signup_confirm_input"),
+        )
+
+        if (error != null) {
+            Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
+        }
+
+        Button(
+            onClick = {
+                if (fullName.trim().isEmpty()) {
+                    error = "Enter your admin name"
+                    return@Button
+                }
+                if (password != confirm) {
+                    error = "Passwords do not match"
+                    return@Button
+                }
+                busy = true
+                error = null
+                viewModel.signUpBackOffice(email, password, fullName, shopName) { err ->
+                    busy = false
+                    error = err
+                }
+            },
+            enabled = !busy,
+            colors = ButtonDefaults.buttonColors(containerColor = BackOfficeNavy, contentColor = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp)
+                .testTag("bo_signup_button"),
+        ) {
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+            } else {
+                Text("Create Back Office Account")
+            }
+        }
+
+        if (hasExistingAccount) {
+            TextButton(
+                onClick = onSwitchToSignIn,
+                modifier = Modifier.align(Alignment.CenterHorizontally).testTag("bo_switch_to_login"),
+            ) {
+                Text("Already have a Back Office account? Sign in", color = LoyTextSecondary)
             }
         }
     }

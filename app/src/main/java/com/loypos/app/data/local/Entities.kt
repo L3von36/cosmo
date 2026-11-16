@@ -37,6 +37,28 @@ data class UserEntity(
     }
 }
 
+@Entity(
+    tableName = "backoffice_users",
+    indices = [Index(value = ["email"], unique = true)]
+)
+data class BackOfficeUserEntity(
+    @PrimaryKey val id: String,
+    val email: String,
+    @ColumnInfo(name = "full_name") val fullName: String = "",
+    @ColumnInfo(name = "shop_name") val shopName: String = "",
+    @ColumnInfo(name = "password_hash") val passwordHash: String,
+    val salt: String = "",
+    val role: String = ROLE_ADMIN,
+    val active: Boolean = true,
+    @ColumnInfo(name = "created_at") val createdAt: Long = 0L,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long = 0L,
+) {
+    companion object {
+        const val ROLE_ADMIN = "admin"
+        const val ROLE_MANAGER = "manager"
+    }
+}
+
 @Entity(tableName = "branches")
 data class BranchEntity(
     @PrimaryKey val id: String,
@@ -67,7 +89,10 @@ data class CategoryEntity(
             onUpdate = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index(value = ["category_id"])],
+    indices = [
+        Index(value = ["category_id"]),
+        Index(value = ["sku"]),
+    ],
 )
 data class ProductEntity(
     @PrimaryKey val id: String,
@@ -85,6 +110,8 @@ data class ProductEntity(
     @ColumnInfo(name = "updated_at") val updatedAt: Long = 0L,
 ) {
     val hasPhoto: Boolean get() = imagePath.isNotEmpty()
+    val stockQuantity: Double get() = stock
+    val priceAmount: Double get() = priceCents / 100.0
 
     fun availableInBranch(branchId: String?): Boolean {
         if (branchIds.isEmpty() || branchId.isNullOrEmpty()) return true
@@ -328,6 +355,10 @@ data class SettingsModel(
     val nextReceiptNumber: Int = 1,
     val lowStockAlertsEnabled: Boolean = false,
     val lowStockThreshold: Double = 3.0,
+    val lowStockIntervalMinutes: Long = 15L,
+    val lowStockLastCheckAt: Long = 0L,
+    val lowStockLastCount: Int = 0,
+    val dailyRevenueTargetCents: Long = 0L,
 )
 
 data class ShiftStats(

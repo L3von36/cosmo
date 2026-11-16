@@ -3,8 +3,13 @@ package com.loypos.app.data
 import android.content.Context
 import androidx.room.withTransaction
 import com.loypos.app.core.AuthCrypto
+import com.loypos.app.core.CsvImportCommitResult
+import com.loypos.app.core.CsvImportPreview
 import com.loypos.app.core.DemoCatalog
 import com.loypos.app.core.DiscountInput
+import com.loypos.app.core.InventoryCsvExportResult
+import com.loypos.app.core.InventoryCsvManager
+import com.loypos.app.core.ParsedCsvProductRow
 import com.loypos.app.core.SalesCsvExporter
 import com.loypos.app.core.SalesCsvReportResult
 import com.loypos.app.core.SalesReportPeriod
@@ -13,6 +18,7 @@ import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
 import com.loypos.app.core.pointsForTotal
 import com.loypos.app.core.startOfTodayMs
+import com.loypos.app.data.local.BackOfficeUserEntity
 import com.loypos.app.data.local.BranchEntity
 import com.loypos.app.data.local.CartLine
 import com.loypos.app.data.local.CashMovementEntity
@@ -22,6 +28,7 @@ import com.loypos.app.data.local.DailyRevenuePoint
 import com.loypos.app.data.local.DbStats
 import com.loypos.app.data.local.ItemEntity
 import com.loypos.app.data.local.LoyPosDatabase
+import com.loypos.app.data.local.ProductEntity
 import com.loypos.app.data.local.ReceiptEntity
 import com.loypos.app.data.local.ReceiptLineEntity
 import com.loypos.app.data.local.ReceiptWithLines
@@ -45,6 +52,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Calendar
+import java.util.Locale
 
 class LoyPosRepository(private val context: Context) {
     private val db = LoyPosDatabase.getInstance(context)
@@ -53,6 +61,7 @@ class LoyPosRepository(private val context: Context) {
     val categoryDao = db.categoryDao()
     val saleDao = db.saleDao()
     val saleItemDao = db.saleItemDao()
+    val backOfficeUserDao = db.backOfficeUserDao()
     private val seedMutex = Mutex()
 
     suspend fun ensureInitialized() = seedMutex.withLock {
@@ -73,6 +82,10 @@ class LoyPosRepository(private val context: Context) {
             nextReceiptNumber = map["next_receipt_number"]?.toIntOrNull() ?: 1,
             lowStockAlertsEnabled = map["low_stock_alerts_enabled"] == "true",
             lowStockThreshold = (map["low_stock_threshold"]?.toDoubleOrNull() ?: 3.0).coerceAtLeast(0.0),
+            lowStockIntervalMinutes = (map["low_stock_interval_minutes"]?.toLongOrNull() ?: 15L).coerceAtLeast(15L),
+            lowStockLastCheckAt = map["low_stock_last_check_at"]?.toLongOrNull() ?: 0L,
+            lowStockLastCount = map["low_stock_last_count"]?.toIntOrNull() ?: 0,
+            dailyRevenueTargetCents = (map["daily_revenue_target_cents"]?.toLongOrNull() ?: 0L).coerceAtLeast(0L),
         )
     }
 
@@ -89,6 +102,7 @@ class LoyPosRepository(private val context: Context) {
     }
     val customersFlow: Flow<List<CustomerEntity>> = dao.observeCustomers()
     val staffFlow: Flow<List<UserEntity>> = dao.observeStaff()
+    val backOfficeUsersFlow: Flow<List<BackOfficeUserEntity>> = backOfficeUserDao.observeBackOfficeUsers()
     val stockMovementsFlow: Flow<List<StockMovementEntity>> = dao.observeRecentStockMovements()
     val shiftsFlow: Flow<List<ShiftEntity>> = dao.observeShifts()
     val cashMovementsFlow: Flow<List<CashMovementEntity>> = dao.observeCashMovements()
@@ -186,10 +200,25 @@ class LoyPosRepository(private val context: Context) {
         saveSetting("cloud_settings_ts", now.toString())
     }
 
-    suspend fun saveLowStockAlertSettings(enabled: Boolean, threshold: Double) {
+    suspend fun saveLowStockAlertSettings(
+        enabled: Boolean,
+        threshold: Double,
+        intervalMinutes: Long = 15L,
+    ) {
         val cleanThreshold = threshold.coerceAtLeast(0.0)
+        val cleanInterval = intervalMinutes.coerceAtLeast(15L)
         saveSetting("low_stock_alerts_enabled", enabled.toString())
         saveSetting("low_stock_threshold", cleanThreshold.toString())
+        saveSetting("low_stock_interval_minutes", cleanInterval.toString())
+    }
+
+    suspend fun saveLowStockCheckResult(checkedAt: Long, lowCount: Int) {
+        saveSetting("low_stock_last_check_at", checkedAt.toString())
+        saveSetting("low_stock_last_count", lowCount.coerceAtLeast(0).toString())
+    }
+
+    suspend fun saveDailyRevenueTarget(targetCents: Long) {
+        saveSetting("daily_revenue_target_cents", targetCents.coerceAtLeast(0L).toString())
     }
 
     suspend fun getLowStockProducts(threshold: Double): List<ItemEntity> =
@@ -336,6 +365,132 @@ class LoyPosRepository(private val context: Context) {
         dao.deleteUserById(id)
     }
 
+    // --- Back Office Auth (isolated from POS Register sessions) ---
+    suspend fun currentBackOfficeSessionUser(): BackOfficeUserEntity? {
+        val id = dao.getSetting("backoffice_session_user") ?: return null
+        if (id.isEmpty()) return null
+        val user = backOfficeUserDao.getBackOfficeUserById(id)
+        if (user == null || !user.active) {
+            dao.upsertSetting(SettingEntity("backoffice_session_user", ""))
+            return null
+        }
+        return user
+    }
+
+    suspend fun anyBackOfficeUsersExist(): Boolean = backOfficeUserDao.countBackOfficeUsers() > 0
+
+    suspend fun signUpBackOfficeAdmin(
+        emailRaw: String,
+        password: String,
+        fullName: String,
+        shopName: String,
+    ): Result<BackOfficeUserEntity> {
+        val email = AuthCrypto.normalizeEmail(emailRaw)
+        if (!AuthCrypto.isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Enter a valid Back Office email address"))
+        }
+        if (password.length < 8) {
+            return Result.failure(IllegalArgumentException("Password must be at least 8 characters"))
+        }
+        if (backOfficeUserDao.getBackOfficeUserByEmail(email) != null) {
+            return Result.failure(IllegalArgumentException("A Back Office account with this email already exists"))
+        }
+        val cleanName = fullName.trim()
+        val cleanShop = shopName.trim()
+        val salt = AuthCrypto.newSalt()
+        val hash = AuthCrypto.hashPassword(password, salt)
+        val now = nowMs()
+        val user = BackOfficeUserEntity(
+            id = newId(),
+            email = email,
+            fullName = cleanName,
+            shopName = cleanShop,
+            passwordHash = hash,
+            salt = salt,
+            role = BackOfficeUserEntity.ROLE_ADMIN,
+            active = true,
+            createdAt = now,
+            updatedAt = now,
+        )
+        db.withTransaction {
+            backOfficeUserDao.upsertBackOfficeUser(user)
+            dao.upsertSetting(SettingEntity("backoffice_session_user", user.id))
+            if (cleanShop.isNotEmpty()) {
+                dao.upsertSetting(SettingEntity("store_name", cleanShop))
+            }
+        }
+        return Result.success(user)
+    }
+
+    suspend fun signInBackOffice(emailRaw: String, password: String): Result<BackOfficeUserEntity> {
+        val email = AuthCrypto.normalizeEmail(emailRaw)
+        if (email.isEmpty() || password.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Enter Back Office email and password"))
+        }
+        val user = backOfficeUserDao.getBackOfficeUserByEmail(email)
+            ?: return Result.failure(IllegalArgumentException("Incorrect Back Office email or password"))
+        val computed = AuthCrypto.hashPassword(password, user.salt)
+        if (!AuthCrypto.safeEquals(computed, user.passwordHash)) {
+            return Result.failure(IllegalArgumentException("Incorrect Back Office email or password"))
+        }
+        if (!user.active) {
+            return Result.failure(IllegalArgumentException("This Back Office account has been deactivated"))
+        }
+        dao.upsertSetting(SettingEntity("backoffice_session_user", user.id))
+        return Result.success(user)
+    }
+
+    suspend fun signOutBackOffice() {
+        dao.upsertSetting(SettingEntity("backoffice_session_user", ""))
+    }
+
+    suspend fun addBackOfficeAdmin(
+        fullName: String,
+        emailRaw: String,
+        password: String,
+        role: String,
+        shopName: String,
+    ): Result<BackOfficeUserEntity> {
+        val cleanName = fullName.trim()
+        val email = AuthCrypto.normalizeEmail(emailRaw)
+        if (cleanName.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Admin name is required"))
+        }
+        if (!AuthCrypto.isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Enter a valid email address"))
+        }
+        if (password.length < 8) {
+            return Result.failure(IllegalArgumentException("Password must be at least 8 characters"))
+        }
+        if (backOfficeUserDao.getBackOfficeUserByEmail(email) != null) {
+            return Result.failure(IllegalArgumentException("A Back Office account with this email already exists"))
+        }
+        val salt = AuthCrypto.newSalt()
+        val now = nowMs()
+        val user = BackOfficeUserEntity(
+            id = newId(),
+            email = email,
+            fullName = cleanName,
+            shopName = shopName,
+            passwordHash = AuthCrypto.hashPassword(password, salt),
+            salt = salt,
+            role = role,
+            active = true,
+            createdAt = now,
+            updatedAt = now,
+        )
+        backOfficeUserDao.upsertBackOfficeUser(user)
+        return Result.success(user)
+    }
+
+    suspend fun setBackOfficeUserActive(id: String, active: Boolean) {
+        backOfficeUserDao.setBackOfficeUserActive(id, active, nowMs())
+    }
+
+    suspend fun deleteBackOfficeUser(id: String) {
+        backOfficeUserDao.deleteBackOfficeUserById(id)
+    }
+
     // --- Branches ---
     suspend fun saveBranch(branch: BranchEntity) {
         dao.upsertBranch(branch.copy(updatedAt = nowMs()))
@@ -414,6 +569,211 @@ class LoyPosRepository(private val context: Context) {
                 )
             )
         }
+    }
+
+    suspend fun batchRestockToTarget(
+        itemIds: List<String>,
+        targetStock: Double,
+        note: String = "Batch restock",
+    ): Int {
+        if (itemIds.isEmpty() || targetStock <= 0.0) return 0
+        val now = nowMs()
+        var updatedCount = 0
+        db.withTransaction {
+            for (id in itemIds) {
+                val product = productDao.getProductById(id) ?: continue
+                if (!product.trackStock) continue
+                val delta = targetStock - product.stock
+                if (delta > 0.0) {
+                    productDao.updateProductStock(id, targetStock, now)
+                    dao.insertStockMovement(
+                        StockMovementEntity(
+                            id = newId(),
+                            itemId = id,
+                            qty = delta,
+                            type = "receive",
+                            createdAt = now,
+                            note = note,
+                        )
+                    )
+                    updatedCount++
+                }
+            }
+        }
+        return updatedCount
+    }
+
+    // --- Inventory CSV Export & Bulk Import ---
+    suspend fun buildInventoryCsvExport(includeArchived: Boolean = false): InventoryCsvExportResult =
+        withContext(Dispatchers.IO) {
+            val products = productDao.getAllProducts()
+            val categories = categoryDao.getAllCategories()
+            InventoryCsvManager.buildInventoryCsv(
+                products = products,
+                categories = categories,
+                includeArchived = includeArchived,
+            )
+        }
+
+    suspend fun previewInventoryCsvImport(
+        rawCsv: String,
+        filenameLabel: String,
+    ): CsvImportPreview = withContext(Dispatchers.IO) {
+        val products = productDao.getAllProducts()
+        val categories = categoryDao.getAllCategories()
+        InventoryCsvManager.parseInventoryCsv(
+            rawCsv = rawCsv,
+            filenameLabel = filenameLabel,
+            existingProducts = products,
+            existingCategories = categories,
+        )
+    }
+
+    suspend fun commitInventoryCsvImport(
+        rows: List<ParsedCsvProductRow>,
+        skipExisting: Boolean,
+    ): CsvImportCommitResult = withContext(Dispatchers.IO) {
+        if (rows.isEmpty()) {
+            return@withContext CsvImportCommitResult(0, 0, 0, 0)
+        }
+        val now = nowMs()
+        var insertedCount = 0
+        var updatedCount = 0
+        var skippedCount = 0
+        var createdCategoriesCount = 0
+
+        db.withTransaction {
+            val categories = categoryDao.getAllCategories().toMutableList()
+            val categoryByLower = categories.associateBy { it.name.trim().lowercase(Locale.ROOT) }.toMutableMap()
+
+            val existingProducts = productDao.getAllProducts().toMutableList()
+            val byId = existingProducts.associateBy { it.id }.toMutableMap()
+            val bySku = existingProducts
+                .filter { it.sku.isNotBlank() }
+                .associateBy { it.sku.trim().lowercase(Locale.ROOT) }
+                .toMutableMap()
+            val byBarcode = existingProducts
+                .filter { it.barcode.isNotBlank() }
+                .associateBy { it.barcode.trim().lowercase(Locale.ROOT) }
+                .toMutableMap()
+            val byName = existingProducts
+                .associateBy { it.name.trim().lowercase(Locale.ROOT) }
+                .toMutableMap()
+
+            val productsToUpsert = mutableListOf<ProductEntity>()
+            val newCategories = mutableListOf<CategoryEntity>()
+            val movements = mutableListOf<StockMovementEntity>()
+
+            for (row in rows) {
+                val existing = row.matchedExistingId?.let { byId[it] }
+                    ?: row.sku.takeIf { it.isNotEmpty() }?.let { bySku[it.lowercase(Locale.ROOT)] }
+                    ?: row.barcode.takeIf { it.isNotEmpty() }?.let { byBarcode[it.lowercase(Locale.ROOT)] }
+                    ?: byName[row.name.lowercase(Locale.ROOT)]
+
+                if (existing != null && skipExisting) {
+                    skippedCount++
+                    continue
+                }
+
+                val resolvedCategoryId: String? = if (row.categoryName.isNotEmpty()) {
+                    val lower = row.categoryName.lowercase(Locale.ROOT)
+                    val found = categoryByLower[lower]
+                    if (found != null) {
+                        found.id
+                    } else {
+                        val created = CategoryEntity(
+                            id = newId(),
+                            name = row.categoryName,
+                            position = categories.size,
+                            updatedAt = now,
+                        )
+                        categories.add(created)
+                        categoryByLower[lower] = created
+                        newCategories.add(created)
+                        createdCategoriesCount++
+                        created.id
+                    }
+                } else {
+                    existing?.categoryId
+                }
+
+                if (existing != null) {
+                    val updated = existing.copy(
+                        categoryId = resolvedCategoryId,
+                        name = row.name,
+                        priceCents = row.priceCents,
+                        costCents = if (row.costCents > 0L) row.costCents else existing.costCents,
+                        sku = row.sku.ifEmpty { existing.sku },
+                        barcode = row.barcode.ifEmpty { existing.barcode },
+                        trackStock = row.trackStock,
+                        stock = row.stock,
+                        archived = row.archived,
+                        updatedAt = now,
+                    )
+                    productsToUpsert.add(updated)
+                    byId[updated.id] = updated
+                    if (updated.sku.isNotBlank()) bySku[updated.sku.trim().lowercase(Locale.ROOT)] = updated
+                    if (updated.barcode.isNotBlank()) byBarcode[updated.barcode.trim().lowercase(Locale.ROOT)] = updated
+                    byName[updated.name.trim().lowercase(Locale.ROOT)] = updated
+                    if (updated.trackStock && updated.stock != existing.stock) {
+                        movements.add(
+                            StockMovementEntity(
+                                id = newId(),
+                                itemId = updated.id,
+                                qty = updated.stock - existing.stock,
+                                type = "adjust",
+                                createdAt = now,
+                                note = "CSV import update",
+                            )
+                        )
+                    }
+                    updatedCount++
+                } else {
+                    val created = ProductEntity(
+                        id = newId(),
+                        categoryId = resolvedCategoryId,
+                        name = row.name,
+                        priceCents = row.priceCents,
+                        costCents = row.costCents,
+                        sku = row.sku,
+                        barcode = row.barcode,
+                        trackStock = row.trackStock,
+                        stock = row.stock,
+                        archived = row.archived,
+                        updatedAt = now,
+                    )
+                    productsToUpsert.add(created)
+                    byId[created.id] = created
+                    if (created.sku.isNotBlank()) bySku[created.sku.trim().lowercase(Locale.ROOT)] = created
+                    if (created.barcode.isNotBlank()) byBarcode[created.barcode.trim().lowercase(Locale.ROOT)] = created
+                    byName[created.name.trim().lowercase(Locale.ROOT)] = created
+                    if (created.trackStock && created.stock > 0.0) {
+                        movements.add(
+                            StockMovementEntity(
+                                id = newId(),
+                                itemId = created.id,
+                                qty = created.stock,
+                                type = "receive",
+                                createdAt = now,
+                                note = "CSV import",
+                            )
+                        )
+                    }
+                    insertedCount++
+                }
+            }
+
+            if (newCategories.isNotEmpty()) categoryDao.upsertCategories(newCategories)
+            if (productsToUpsert.isNotEmpty()) productDao.upsertProducts(productsToUpsert)
+            if (movements.isNotEmpty()) dao.insertStockMovements(movements)
+        }
+
+        CsvImportCommitResult(
+            insertedCount = insertedCount,
+            updatedCount = updatedCount,
+            skippedCount = skippedCount,
+            createdCategoriesCount = createdCategoriesCount,
+        )
     }
 
     // --- Customers ---
@@ -711,7 +1071,7 @@ class LoyPosRepository(private val context: Context) {
             dao.deleteAllBranches()
             dao.deleteShopSettings()
 
-            val skipKeys = setOf("session_user", "cloud_team_id")
+            val skipKeys = setOf("session_user", "backoffice_session_user", "cloud_team_id")
             val settingEntities = settings.entries
                 .filter { it.key !in skipKeys }
                 .map { SettingEntity(it.key, it.value) }

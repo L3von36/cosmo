@@ -32,6 +32,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,6 +48,7 @@ import com.loypos.app.core.formatDateTime
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.TransactionViewModel
+import com.loypos.app.ui.components.ReceiptPdfPreviewSheet
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyGreen
@@ -69,6 +73,7 @@ fun ReceiptSuccessScreen(
     }
     val r = currentReceipt.receipt
     val sym = data.settings.currencySymbol
+    var showPdfPreview by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -164,12 +169,12 @@ fun ReceiptSuccessScreen(
                     Text("Share")
                 }
                 OutlinedButton(
-                    onClick = { viewModel.shareReceiptPdf(currentReceipt) },
+                    onClick = { showPdfPreview = true },
                     modifier = Modifier.weight(1f).height(50.dp).testTag("receipt_share_pdf_button"),
                 ) {
                     Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Receipt PDF")
+                    Text("Preview PDF")
                 }
             }
 
@@ -183,5 +188,13 @@ fun ReceiptSuccessScreen(
                 Text("New Sale")
             }
         }
+    }
+
+    if (showPdfPreview) {
+        ReceiptPdfPreviewSheet(
+            viewModel = viewModel,
+            receiptWithLines = currentReceipt,
+            onDismiss = { showPdfPreview = false },
+        )
     }
 }

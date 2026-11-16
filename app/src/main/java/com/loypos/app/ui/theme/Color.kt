@@ -15,6 +15,11 @@ val LoyWarningLight = Color(0xFFFFF3E0)
 val LoyInfo = Color(0xFF1976D2)
 val LoyInfoLight = Color(0xFFE3F2FD)
 
+val BackOfficeNavy = Color(0xFF162436)
+val BackOfficeSlate = Color(0xFF243B55)
+val BackOfficeTeal = Color(0xFF0D9488)
+val BackOfficeTealLight = Color(0xFFE6FFFA)
+
 val LoyBackground = Color(0xFFF6F7F8)
 val LoySurface = Color(0xFFFFFFFF)
 val LoySurfaceVariant = Color(0xFFF1F3F5)

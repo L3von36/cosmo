@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.CloudSync
@@ -42,6 +45,7 @@ import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.TableView
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
@@ -51,6 +55,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +86,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.loypos.app.core.LocalBackup
 import com.loypos.app.core.formatBytes
+import com.loypos.app.core.formatDateTime
 import com.loypos.app.core.formatQty
 import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
@@ -90,9 +97,11 @@ import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.ConfirmDialog
 import com.loypos.app.ui.components.GroupCard
+import com.loypos.app.ui.components.InventoryCsvSheet
 import com.loypos.app.ui.components.PillBadge
 import com.loypos.app.ui.components.SectionHeader
 import com.loypos.app.ui.components.TopSyncIconButton
+import com.loypos.app.ui.theme.BackOfficeTeal
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -165,7 +174,7 @@ fun CashierAccountScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: LoyPosViewModel,
@@ -186,6 +195,7 @@ fun SettingsScreen(
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var pendingRestoreBackup by remember { mutableStateOf<LocalBackup?>(null) }
+    var showInventoryCsvSheet by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -245,6 +255,19 @@ fun SettingsScreen(
             item {
                 SectionHeader("Back Office")
                 GroupCard {
+                    SettingsNavRow(
+                        icon = Icons.Outlined.AdminPanelSettings,
+                        title = "Open Back Office Dashboard",
+                        subtitle = if (session.backOfficeUser != null) {
+                            "Signed in as ${session.backOfficeUser.email} · Analytics, margins & stock"
+                        } else {
+                            "Separate Back Office authentication · Analytics, margins & stock"
+                        },
+                        iconTint = BackOfficeTeal,
+                        onClick = { viewModel.openBackOffice() },
+                        modifier = Modifier.testTag("settings_open_backoffice_portal"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
                         icon = Icons.Outlined.AccessTime,
                         title = "Shift & Cash Drawer",
@@ -393,9 +416,9 @@ fun SettingsScreen(
                 }
             }
 
-            // Low-Stock Periodic Alerts
+            // Low-Stock Periodic Alerts (WorkManager)
             item {
-                SectionHeader("Inventory Alerts")
+                SectionHeader("Inventory Alerts (WorkManager)")
                 GroupCard {
                     Row(
                         modifier = Modifier
@@ -407,16 +430,31 @@ fun SettingsScreen(
                         Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = LoyGreen)
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Periodic low-stock alerts", fontWeight = FontWeight.Medium)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text("Periodic low-stock alerts", fontWeight = FontWeight.Medium)
+                                PillBadge(
+                                    text = if (data.settings.lowStockAlertsEnabled) session.lowStockWorkerStatus else "Off",
+                                )
+                            }
                             Text(
                                 text = if (data.settings.lowStockAlertsEnabled) {
-                                    "Checks every 15 min for items < ${formatQty(data.settings.lowStockThreshold)}"
+                                    "Checks Room every ${data.settings.lowStockIntervalMinutes} min for items < ${formatQty(data.settings.lowStockThreshold)}"
                                 } else {
-                                    "Background notifications turned off"
+                                    "Background WorkManager notifications turned off"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = LoyTextSecondary,
                             )
+                            if (data.settings.lowStockLastCheckAt > 0L) {
+                                Text(
+                                    text = "Last scan: ${formatDateTime(data.settings.lowStockLastCheckAt)} · ${data.settings.lowStockLastCount} low/out",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = LoyTextSecondary,
+                                )
+                            }
                         }
                         Switch(
                             checked = data.settings.lowStockAlertsEnabled,
@@ -435,6 +473,31 @@ fun SettingsScreen(
                         )
                     }
                     HorizontalDivider(color = LoyBorder)
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(
+                            text = "Worker check interval",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(15L to "15 min", 30L to "30 min", 60L to "1 hr", 360L to "6 hr").forEach { (mins, label) ->
+                                FilterChip(
+                                    selected = data.settings.lowStockIntervalMinutes == mins,
+                                    onClick = {
+                                        viewModel.updateLowStockAlertSettings(
+                                            enabled = data.settings.lowStockAlertsEnabled,
+                                            threshold = data.settings.lowStockThreshold,
+                                            intervalMinutes = mins,
+                                        )
+                                    },
+                                    label = { Text(label) },
+                                    modifier = Modifier.testTag("settings_interval_${mins}m"),
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
                         icon = Icons.Outlined.Tune,
                         title = "Low-stock threshold",
@@ -449,8 +512,7 @@ fun SettingsScreen(
                             .heightIn(min = 48.dp)
                             .clickable {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-                                    data.settings.lowStockAlertsEnabled
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
                                 ) {
                                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                 } else {
@@ -472,6 +534,14 @@ fun SettingsScreen(
             item {
                 SectionHeader("Data & Safety Backups")
                 GroupCard {
+                    SettingsNavRow(
+                        icon = Icons.Outlined.TableView,
+                        title = "Bulk inventory (CSV import / export)",
+                        subtitle = "Export ${data.items.size} products or bulk-import from CSV spreadsheets",
+                        onClick = { showInventoryCsvSheet = true },
+                        modifier = Modifier.testTag("settings_inventory_csv_row"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
                         icon = Icons.Outlined.Upload,
                         title = "Export shop data (JSON)",
@@ -574,6 +644,14 @@ fun SettingsScreen(
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
+
+    if (showInventoryCsvSheet) {
+        InventoryCsvSheet(
+            viewModel = viewModel,
+            data = data,
+            onDismiss = { showInventoryCsvSheet = false },
+        )
     }
 
     if (showStoreDialog) {
@@ -693,6 +771,7 @@ private fun SettingsNavRow(
     subtitle: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    iconTint: Color = LoyGreen,
 ) {
     Row(
         modifier = modifier
@@ -702,7 +781,7 @@ private fun SettingsNavRow(
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = LoyGreen)
+        Icon(icon, contentDescription = null, tint = iconTint)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Medium)

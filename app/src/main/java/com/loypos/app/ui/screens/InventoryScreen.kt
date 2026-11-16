@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.ImportExport
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -46,6 +48,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -94,6 +97,7 @@ import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.EmptyState
 import com.loypos.app.ui.components.GroupCard
+import com.loypos.app.ui.components.InventoryCsvSheet
 import com.loypos.app.ui.components.ItemThumbnail
 import com.loypos.app.ui.components.StockDotBadge
 import com.loypos.app.ui.components.TopSyncIconButton
@@ -119,12 +123,23 @@ fun InventoryScreen(
     var tabIndex by remember { mutableIntStateOf(0) }
     val search by viewModel.inventorySearchQuery.collectAsStateWithLifecycle()
     val roomProducts by viewModel.inventoryProducts.collectAsStateWithLifecycle()
+    var selectedCategoryFilter by remember { mutableStateOf<String?>(null) }
+    var lowStockOnly by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<ProductEntity?>(null) }
     var isCreatingItem by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var isCreatingCategory by remember { mutableStateOf(false) }
+    var showCsvSheet by remember { mutableStateOf(false) }
 
     val sym = data.settings.currencySymbol
+    val threshold = data.settings.lowStockThreshold
+    val filteredProducts = remember(roomProducts, selectedCategoryFilter, lowStockOnly, threshold) {
+        roomProducts.filter { product ->
+            val matchesCat = selectedCategoryFilter == null || product.categoryId == selectedCategoryFilter
+            val matchesLow = !lowStockOnly || (product.trackStock && product.stock < threshold)
+            matchesCat && matchesLow
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -133,6 +148,16 @@ fun InventoryScreen(
                     title = { Text("Inventory", fontWeight = FontWeight.Bold) },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
                     actions = {
+                        IconButton(
+                            onClick = { showCsvSheet = true },
+                            modifier = Modifier.size(48.dp).testTag("inventory_csv_button"),
+                        ) {
+                            Icon(
+                                Icons.Outlined.ImportExport,
+                                contentDescription = "CSV Import and Export",
+                                tint = LoyGreen,
+                            )
+                        }
                         TextButton(
                             onClick = onNavigateToStock,
                             modifier = Modifier.heightIn(min = 48.dp).testTag("inventory_stock_button"),
@@ -222,17 +247,59 @@ fun InventoryScreen(
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                             .testTag("inventory_search_input"),
                     )
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(LoySurface)
+                            .padding(bottom = 10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = !lowStockOnly && selectedCategoryFilter == null,
+                                onClick = {
+                                    lowStockOnly = false
+                                    selectedCategoryFilter = null
+                                },
+                                label = { Text("All") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFFE8F5E9),
+                                    selectedLabelColor = LoyGreen,
+                                ),
+                            )
+                        }
+                        item {
+                            val lowCount = data.items.count { it.trackStock && it.stock < threshold }
+                            FilterChip(
+                                selected = lowStockOnly,
+                                onClick = { lowStockOnly = !lowStockOnly },
+                                label = { Text("Low / Out ($lowCount)") },
+                                modifier = Modifier.testTag("inventory_filter_low_stock"),
+                            )
+                        }
+                        items(data.categories, key = { it.id }) { cat ->
+                            val sel = selectedCategoryFilter == cat.id
+                            FilterChip(
+                                selected = sel,
+                                onClick = {
+                                    selectedCategoryFilter = if (sel) null else cat.id
+                                },
+                                label = { Text(cat.name) },
+                            )
+                        }
+                    }
                     HorizontalDivider(color = LoyBorder)
 
-                    if (roomProducts.isEmpty()) {
+                    if (filteredProducts.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             EmptyState(
                                 icon = Icons.Outlined.Inventory2,
-                                title = if (search.isBlank()) "No products found" else "No matching products",
-                                subtitle = if (search.isBlank()) {
-                                    "Tap + to add a product to your inventory."
-                                } else {
-                                    "No products match \"$search\" by name or SKU."
+                                title = if (search.isBlank() && !lowStockOnly) "No products found" else "No matching products",
+                                subtitle = when {
+                                    lowStockOnly -> "No products are below ${formatQty(threshold)} in stock."
+                                    search.isBlank() -> "Tap + to add a product to your inventory."
+                                    else -> "No products match \"$search\" by name or SKU."
                                 },
                             )
                         }
@@ -241,7 +308,7 @@ fun InventoryScreen(
                             contentPadding = PaddingValues(14.dp, 10.dp, 14.dp, 88.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(roomProducts, key = { it.id }) { product ->
+                            items(filteredProducts, key = { it.id }) { product ->
                                 val catName = data.categories.firstOrNull { it.id == product.categoryId }?.name
                                     ?: "Uncategorized"
                                 Surface(
@@ -270,7 +337,7 @@ fun InventoryScreen(
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = LoyTextSecondary,
                                             )
-                                            StockDotBadge(item = product)
+                                            StockDotBadge(item = product, threshold = threshold)
                                         }
                                         Text(
                                             formatCents(product.priceCents, sym),
@@ -397,6 +464,14 @@ fun InventoryScreen(
                 editingCategory = null
             },
             onDismiss = { editingCategory = null },
+        )
+    }
+
+    if (showCsvSheet) {
+        InventoryCsvSheet(
+            viewModel = viewModel,
+            data = data,
+            onDismiss = { showCsvSheet = false },
         )
     }
 }

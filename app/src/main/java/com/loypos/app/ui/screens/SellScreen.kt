@@ -1,5 +1,6 @@
 package com.loypos.app.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,11 +30,15 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -318,16 +323,31 @@ fun SellScreen(
                                     currencySymbol = sym,
                                     qtyInCart = qtyInCart,
                                     onAdd = { transactionViewModel.addProductToCart(item) },
+                                    onDecrement = {
+                                        transactionViewModel.updateCartItemQty(item.id, (qtyInCart - 1.0).coerceAtLeast(0.0))
+                                    },
                                 )
                             }
                         }
                     }
 
                     if (!isWide) {
-                        BottomCartBar(
-                            itemCount = cartSession.items.size,
-                            totalCents = totals.totalCents,
+                        CheckoutCartSummaryCard(
+                            cartItems = cartSession.items,
+                            totals = totals,
                             currencySymbol = sym,
+                            onIncrement = { line ->
+                                val product = data.items.firstOrNull { it.id == line.itemId }
+                                if (product != null) {
+                                    transactionViewModel.addProductToCart(product)
+                                } else {
+                                    transactionViewModel.updateCartItemQty(line.itemId, line.qty + 1.0)
+                                }
+                            },
+                            onDecrement = { line ->
+                                transactionViewModel.updateCartItemQty(line.itemId, (line.qty - 1.0).coerceAtLeast(0.0))
+                            },
+                            onEditLine = { editingLine = it },
                             onOpenCart = onNavigateToCart,
                             onCharge = onNavigateToPayment,
                         )
@@ -441,6 +461,7 @@ private fun ProductSaleRow(
     currencySymbol: String,
     qtyInCart: Double,
     onAdd: () -> Unit,
+    onDecrement: () -> Unit,
 ) {
     val outOfStock = item.trackStock && item.stock <= 0.0
     Surface(
@@ -480,7 +501,12 @@ private fun ProductSaleRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (item.sku.isNotEmpty()) {
-                        Text(item.sku, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                        Text(
+                            text = "SKU ${item.sku}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                            maxLines = 1,
+                        )
                     }
                     StockDotBadge(item = item)
                 }
@@ -493,18 +519,45 @@ private fun ProductSaleRow(
                 color = if (item.priceCents > 0L) LoyTextPrimary else LoyTextSecondary,
             )
             Spacer(Modifier.width(6.dp))
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = if (outOfStock) LoySurfaceVariant else LoyGreenLight,
-                modifier = Modifier.size(38.dp),
+            if (qtyInCart > 0) {
+                IconButton(
+                    onClick = onDecrement,
+                    modifier = Modifier.size(48.dp).testTag("product_dec_${item.id}"),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = LoySurfaceVariant,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.Remove,
+                                contentDescription = "Remove one ${item.name}",
+                                tint = LoyTextPrimary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            IconButton(
+                onClick = onAdd,
+                enabled = !outOfStock,
+                modifier = Modifier.size(48.dp).testTag("product_inc_${item.id}"),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Outlined.Add,
-                        contentDescription = "Add ${item.name}",
-                        tint = if (outOfStock) LoyTextSecondary else LoyGreen,
-                        modifier = Modifier.size(20.dp),
-                    )
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (outOfStock) LoySurfaceVariant else LoyGreenLight,
+                    modifier = Modifier.size(34.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Outlined.Add,
+                            contentDescription = "Add ${item.name}",
+                            tint = if (outOfStock) LoyTextSecondary else LoyGreen,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
@@ -512,47 +565,199 @@ private fun ProductSaleRow(
 }
 
 @Composable
-private fun BottomCartBar(
-    itemCount: Int,
-    totalCents: Long,
+private fun CheckoutCartSummaryCard(
+    cartItems: List<CartLine>,
+    totals: com.loypos.app.core.SaleTotals,
     currencySymbol: String,
+    onIncrement: (CartLine) -> Unit,
+    onDecrement: (CartLine) -> Unit,
+    onEditLine: (CartLine) -> Unit,
     onOpenCart: () -> Unit,
     onCharge: () -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+    val totalUnits = cartItems.sumOf { it.qty }
+
     Surface(
         color = LoySurface,
         shadowElevation = 6.dp,
         border = BorderStroke(1.dp, LoyBorder),
+        modifier = Modifier.fillMaxWidth().testTag("checkout_cart_summary"),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            OutlinedButton(
-                onClick = onOpenCart,
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Shopping Cart Summary header row
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
-                    .testTag("view_ticket_button"),
+                    .fillMaxWidth()
+                    .clickable(enabled = cartItems.isNotEmpty()) { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = if (itemCount == 0) "Ticket (0)" else "Ticket ($itemCount) · ${formatCents(totalCents, currencySymbol)}",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Icon(
+                    imageVector = Icons.Outlined.ShoppingCart,
+                    contentDescription = null,
+                    tint = if (cartItems.isNotEmpty()) LoyGreen else LoyTextSecondary,
+                    modifier = Modifier.size(20.dp),
                 )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Shopping Cart Summary",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = LoyTextPrimary,
+                    )
+                    Text(
+                        text = if (cartItems.isEmpty()) {
+                            "Tap products above to add to cart"
+                        } else {
+                            "${cartItems.size} ${if (cartItems.size == 1) "item" else "items"} · ${formatQty(totalUnits)} qty"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Total Cost",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LoyTextSecondary,
+                    )
+                    Text(
+                        text = formatCents(totals.totalCents, currencySymbol),
+                        style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
+                        fontWeight = FontWeight.Bold,
+                        color = if (cartItems.isNotEmpty()) LoyGreen else LoyTextPrimary,
+                        modifier = Modifier.testTag("checkout_total_cost"),
+                    )
+                }
+                if (cartItems.isNotEmpty()) {
+                    IconButton(
+                        onClick = { expanded = !expanded },
+                        modifier = Modifier.size(48.dp).testTag("cart_summary_expand"),
+                    ) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                            contentDescription = if (expanded) "Collapse cart summary" else "Expand cart summary",
+                        )
+                    }
+                }
             }
-            Button(
-                onClick = onCharge,
-                enabled = itemCount > 0,
+
+            AnimatedVisibility(visible = expanded && cartItems.isNotEmpty()) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    HorizontalDivider(color = LoyBorder)
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        items(cartItems, key = { it.itemId }) { line ->
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = LoySurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onEditLine(line) },
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = line.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = "${formatQty(line.qty)} × ${formatCents(line.priceCents, currencySymbol)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = LoyTextSecondary,
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onDecrement(line) },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        Icon(Icons.Outlined.Remove, contentDescription = "Decrease ${line.name}", modifier = Modifier.size(18.dp))
+                                    }
+                                    IconButton(
+                                        onClick = { onIncrement(line) },
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
+                                        Icon(Icons.Outlined.Add, contentDescription = "Increase ${line.name}", tint = LoyGreen, modifier = Modifier.size(18.dp))
+                                    }
+                                    Text(
+                                        text = formatCents(line.lineTotalCents, currencySymbol),
+                                        style = TabularMoneyStyle.merge(MaterialTheme.typography.bodyMedium),
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = LoyBorder)
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Subtotal", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                            Text(formatCents(totals.subtotalCents, currencySymbol), style = TabularMoneyStyle.merge(MaterialTheme.typography.bodySmall))
+                        }
+                        if (totals.discountCents > 0L) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Discount", style = MaterialTheme.typography.bodySmall, color = LoyGreen)
+                                Text("-${formatCents(totals.discountCents, currencySymbol)}", style = TabularMoneyStyle.merge(MaterialTheme.typography.bodySmall), color = LoyGreen)
+                            }
+                        }
+                        if (totals.taxCents > 0L) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Tax", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                Text(formatCents(totals.taxCents, currencySymbol), style = TabularMoneyStyle.merge(MaterialTheme.typography.bodySmall))
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = LoyBorder)
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(50.dp)
-                    .testTag("charge_bar_button"),
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Charge ${formatCents(totalCents, currencySymbol)}", maxLines = 1)
+                OutlinedButton(
+                    onClick = onOpenCart,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .testTag("view_ticket_button"),
+                ) {
+                    Text(
+                        text = if (cartItems.isEmpty()) "Ticket (0)" else "View Cart (${cartItems.size})",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Button(
+                    onClick = onCharge,
+                    enabled = cartItems.isNotEmpty(),
+                    modifier = Modifier
+                        .weight(1.35f)
+                        .height(50.dp)
+                        .testTag("charge_bar_button"),
+                ) {
+                    Text("Charge ${formatCents(totals.totalCents, currencySymbol)}", maxLines = 1)
+                }
             }
         }
     }
@@ -679,6 +884,24 @@ fun ReceiptPanelContent(
     val customer = data.customers.firstOrNull { it.id == cartSession.customerId }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.ShoppingCart, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(20.dp))
+                Text(
+                    text = "Shopping Cart Summary",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            PillBadge(text = "${cartSession.items.size} ${if (cartSession.items.size == 1) "item" else "items"}")
+        }
+        HorizontalDivider(color = LoyBorder)
         // Quick action chips row
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),

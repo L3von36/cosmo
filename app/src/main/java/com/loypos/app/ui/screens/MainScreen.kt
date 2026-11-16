@@ -103,6 +103,17 @@ fun MainScreen(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
+    LaunchedEffect(session.navigateToLowStockTrigger, isOwner) {
+        if (session.navigateToLowStockTrigger > 0) {
+            if (isOwner) {
+                navController.navigate(StockRoute) {
+                    launchSingleTop = true
+                }
+            }
+            viewModel.consumeLowStockNavigation()
+        }
+    }
+
     val topLevelDestinations = remember(isOwner) {
         if (isOwner) {
             listOf(
@@ -331,6 +342,7 @@ fun MainScreen(
                                 viewModel = viewModel,
                                 data = data,
                                 onBack = { navController.popBackStack() },
+                                session = session,
                             )
                         }
 

@@ -27,6 +27,9 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
     suspend fun getProductById(id: String): ProductEntity?
 
+    @Query("SELECT * FROM products WHERE archived = 0 AND sku = :sku LIMIT 1")
+    suspend fun getProductBySku(sku: String): ProductEntity?
+
     @Query("SELECT * FROM products WHERE archived = 0 AND track_stock = 1 AND stock < :threshold ORDER BY stock ASC, name ASC")
     suspend fun getLowStockProducts(threshold: Double): List<ProductEntity>
 
@@ -156,6 +159,30 @@ interface SaleItemDao {
 
     @Query("DELETE FROM sale_items WHERE receipt_id = :saleId")
     suspend fun deleteSaleItemsForSale(saleId: String)
+}
+
+@Dao
+interface BackOfficeUserDao {
+    @Query("SELECT * FROM backoffice_users ORDER BY created_at DESC")
+    fun observeBackOfficeUsers(): Flow<List<BackOfficeUserEntity>>
+
+    @Query("SELECT * FROM backoffice_users WHERE id = :id LIMIT 1")
+    suspend fun getBackOfficeUserById(id: String): BackOfficeUserEntity?
+
+    @Query("SELECT * FROM backoffice_users WHERE email = :email LIMIT 1")
+    suspend fun getBackOfficeUserByEmail(email: String): BackOfficeUserEntity?
+
+    @Query("SELECT COUNT(*) FROM backoffice_users")
+    suspend fun countBackOfficeUsers(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBackOfficeUser(user: BackOfficeUserEntity)
+
+    @Query("UPDATE backoffice_users SET active = :active, updated_at = :updatedAt WHERE id = :id")
+    suspend fun setBackOfficeUserActive(id: String, active: Boolean, updatedAt: Long)
+
+    @Query("DELETE FROM backoffice_users WHERE id = :id")
+    suspend fun deleteBackOfficeUserById(id: String)
 }
 
 @Dao

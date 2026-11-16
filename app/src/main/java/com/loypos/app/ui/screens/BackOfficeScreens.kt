@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,9 +21,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.verticalScroll
@@ -34,11 +38,13 @@ import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PeopleOutline
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.TableView
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -81,6 +87,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.loypos.app.core.SalesCsvReportResult
 import com.loypos.app.core.SalesReportPeriod
@@ -99,6 +106,7 @@ import com.loypos.app.data.local.ItemEntity
 import com.loypos.app.data.local.TopItemReportRow
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.CurrencyNumPad
 import com.loypos.app.ui.components.EmptyState
 import com.loypos.app.ui.components.GroupCard
@@ -122,27 +130,53 @@ import com.loypos.app.ui.theme.TabularMoneyStyle
 import java.util.Calendar
 import java.util.TimeZone
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun StockScreen(
     viewModel: LoyPosViewModel,
     data: LoyPosDataState,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    session: UiSessionState? = null,
 ) {
     var search by remember { mutableStateOf("") }
+    var filterIdx by remember { mutableIntStateOf(0) } // 0=All, 1=Low, 2=Out
     var selectedItem by remember { mutableStateOf<ItemEntity?>(null) }
+    var showBatchRestockDialog by remember { mutableStateOf(false) }
 
-    val trackedItems = remember(data.items, search) {
+    val threshold = data.settings.lowStockThreshold
+
+    val allTracked = remember(data.items) {
+        data.items.filter { it.trackStock }
+    }
+    val outCount = remember(allTracked) { allTracked.count { it.stock <= 0.0 } }
+    val lowOnlyCount = remember(allTracked, threshold) {
+        allTracked.count { it.stock > 0.0 && it.stock < threshold }
+    }
+    val attentionItems = remember(allTracked, threshold) {
+        allTracked.filter { it.stock < threshold }
+    }
+
+    val trackedItems = remember(allTracked, search, filterIdx, threshold) {
         val q = search.trim().lowercase()
-        data.items
-            .filter { it.trackStock && (q.isEmpty() || it.name.lowercase().contains(q) || it.sku.lowercase().contains(q)) }
+        allTracked
+            .filter { item ->
+                val matchesSearch = q.isEmpty() ||
+                    item.name.lowercase().contains(q) ||
+                    item.sku.lowercase().contains(q)
+                val matchesFilter = when (filterIdx) {
+                    1 -> item.stock > 0.0 && item.stock < threshold
+                    2 -> item.stock <= 0.0
+                    else -> true
+                }
+                matchesSearch && matchesFilter
+            }
             .sortedWith(compareBy<ItemEntity> {
                 when {
                     it.stock <= 0.0 -> 0
-                    it.stock <= 3.0 -> 1
+                    it.stock < threshold -> 1
                     else -> 2
                 }
-            }.thenBy { it.name })
+            }.thenBy { it.stock }.thenBy { it.name })
     }
     val itemNameById = remember(data.items) { data.items.associate { it.id to it.name } }
 
@@ -151,8 +185,20 @@ fun StockScreen(
             TopAppBar(
                 title = { Text("Inventory & Stock", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
+                actions = {
+                    if (attentionItems.isNotEmpty()) {
+                        TextButton(
+                            onClick = { showBatchRestockDialog = true },
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("stock_batch_restock_button"),
+                        ) {
+                            Text("Restock (${attentionItems.size})", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
@@ -164,7 +210,7 @@ fun StockScreen(
             OutlinedTextField(
                 value = search,
                 onValueChange = { search = it },
-                placeholder = { Text("Search tracked items") },
+                placeholder = { Text("Search tracked items or SKU") },
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 singleLine = true,
                 modifier = Modifier
@@ -172,6 +218,50 @@ fun StockScreen(
                     .background(LoySurface)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             )
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(LoySurface)
+                    .padding(bottom = 10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    FilterChip(
+                        selected = filterIdx == 0,
+                        onClick = { filterIdx = 0 },
+                        label = { Text("All (${allTracked.size})") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = LoyGreenLight,
+                            selectedLabelColor = LoyGreen,
+                        ),
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = filterIdx == 1,
+                        onClick = { filterIdx = 1 },
+                        label = { Text("Low Stock ($lowOnlyCount)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFFFF3E0),
+                            selectedLabelColor = LoyWarning,
+                        ),
+                        modifier = Modifier.testTag("stock_filter_low"),
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = filterIdx == 2,
+                        onClick = { filterIdx = 2 },
+                        label = { Text("Out of Stock ($outCount)") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFFFFEBEE),
+                            selectedLabelColor = LoyError,
+                        ),
+                        modifier = Modifier.testTag("stock_filter_out"),
+                    )
+                }
+            }
             HorizontalDivider(color = LoyBorder)
 
             LazyColumn(
@@ -179,6 +269,59 @@ fun StockScreen(
                 contentPadding = PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // WorkManager Stock Monitor Summary Banner
+                item {
+                    GroupCard(modifier = Modifier.testTag("stock_workmanager_banner")) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (data.settings.lowStockAlertsEnabled) LoyGreenLight else LoySurfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.NotificationsActive,
+                                    contentDescription = "Stock alert monitor",
+                                    tint = if (data.settings.lowStockAlertsEnabled) LoyGreen else LoyTextSecondary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                val workerLabel = if (data.settings.lowStockAlertsEnabled) {
+                                    "${session?.lowStockWorkerStatus ?: "Active"} · Every ${data.settings.lowStockIntervalMinutes}m"
+                                } else {
+                                    "Background monitor off"
+                                }
+                                Text(
+                                    text = "Monitor (< ${formatQty(threshold)}): $workerLabel",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = if (data.settings.lowStockLastCheckAt > 0L) {
+                                        "Last scan: ${formatDateTime(data.settings.lowStockLastCheckAt)} · ${data.settings.lowStockLastCount} flagged"
+                                    } else {
+                                        "${attentionItems.size} items currently below threshold"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = LoyTextSecondary,
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.runLowStockCheckNow() },
+                                modifier = Modifier.heightIn(min = 48.dp).testTag("stock_run_check_now"),
+                            ) {
+                                Text("Scan")
+                            }
+                        }
+                    }
+                }
+
                 items(trackedItems, key = { it.id }) { item ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
@@ -197,18 +340,18 @@ fun StockScreen(
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(item.name, fontWeight = FontWeight.SemiBold)
-                                StockDotBadge(item = item)
+                                StockDotBadge(item = item, threshold = threshold)
                             }
                             PillBadge(
                                 text = formatQty(item.stock),
                                 backgroundColor = when {
                                     item.stock <= 0.0 -> Color(0xFFFFEBEE)
-                                    item.stock <= 3.0 -> Color(0xFFFFF3E0)
+                                    item.stock < threshold -> Color(0xFFFFF3E0)
                                     else -> LoyGreenLight
                                 },
                                 textColor = when {
                                     item.stock <= 0.0 -> LoyError
-                                    item.stock <= 3.0 -> LoyWarning
+                                    item.stock < threshold -> LoyWarning
                                     else -> LoyGreen
                                 },
                             )
@@ -265,6 +408,79 @@ fun StockScreen(
             onDismiss = { selectedItem = null },
         )
     }
+
+    if (showBatchRestockDialog) {
+        BatchRestockDialog(
+            lowItemsCount = attentionItems.size,
+            threshold = threshold,
+            onConfirm = { targetCount ->
+                viewModel.batchRestockLowItems(attentionItems.map { it.id }, targetCount)
+                showBatchRestockDialog = false
+            },
+            onDismiss = { showBatchRestockDialog = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BatchRestockDialog(
+    lowItemsCount: Int,
+    threshold: Double,
+    onConfirm: (Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val defaultTarget = (threshold * 3.0).coerceAtLeast(10.0)
+    var targetText by remember { mutableStateOf(formatQty(defaultTarget)) }
+    val parsed = parseQty(targetText)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Batch Restock Low Items") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Replenish all $lowItemsCount low or out-of-stock SKUs (< ${formatQty(threshold)}) up to a target stock count.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LoyTextSecondary,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(10.0, 25.0, 50.0).forEach { preset ->
+                        FilterChip(
+                            selected = parsed == preset,
+                            onClick = { targetText = formatQty(preset) },
+                            label = { Text(formatQty(preset)) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = targetText,
+                    onValueChange = { targetText = it },
+                    label = { Text("Target stock count") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("batch_restock_target_input"),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val v = parsed ?: defaultTarget
+                    if (v > 0.0) onConfirm(v)
+                },
+                enabled = parsed != null && parsed > 0.0,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("batch_restock_confirm"),
+            ) {
+                Text("Restock All")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -304,6 +520,19 @@ private fun StockAdjustBottomSheet(
                     onClick = { mode = "set"; qtyText = formatQty(item.stock) },
                     shape = SegmentedButtonDefaults.itemShape(1, 2),
                 ) { Text("Set count") }
+            }
+
+            if (mode == "receive") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(5, 10, 25, 50).forEach { preset ->
+                        FilterChip(
+                            selected = qtyText == preset.toString(),
+                            onClick = { qtyText = preset.toString() },
+                            label = { Text("+$preset") },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
 
             Surface(color = LoySurfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -529,7 +758,7 @@ private fun CustomerEditorSheet(
 fun ReportsScreen(
     viewModel: LoyPosViewModel,
     data: LoyPosDataState,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
 ) {
     var periodIdx by remember { mutableIntStateOf(1) } // 0=Today, 1=7d, 2=30d, 3=All
     val sym = data.settings.currencySymbol
@@ -612,8 +841,10 @@ fun ReportsScreen(
             TopAppBar(
                 title = { Text("Sales Reports", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    if (onBack != null) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
                 actions = {

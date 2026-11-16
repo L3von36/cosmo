@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.PeopleOutline
@@ -37,6 +38,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -137,11 +139,12 @@ fun DashboardScreen(
     }
     val avgTicketCents = if (todaySummary.salesCount == 0) 0L else todaySummary.netCents / todaySummary.salesCount
 
+    val lowThreshold = data.settings.lowStockThreshold
     val outOfStockCount = remember(data.items) {
         data.items.count { it.trackStock && it.stock <= 0.0 }
     }
-    val lowStockCount = remember(data.items) {
-        data.items.count { it.trackStock && it.stock > 0.0 && it.stock <= 3.0 }
+    val lowStockCount = remember(data.items, lowThreshold) {
+        data.items.count { it.trackStock && it.stock > 0.0 && it.stock < lowThreshold }
     }
 
     val branchReceipts = remember(data.receipts, branchId) {
@@ -154,6 +157,7 @@ fun DashboardScreen(
     val revenueTrend by viewModel.dailyRevenueTrend.collectAsStateWithLifecycle()
 
     val quickActions = remember(
+        viewModel,
         onNavigateToCheckout,
         onNavigateToInventory,
         onNavigateToShift,
@@ -162,6 +166,9 @@ fun DashboardScreen(
     ) {
         listOf(
             QuickActionItem("Checkout", Icons.Outlined.PointOfSale, "dash_action_checkout", onNavigateToCheckout),
+            QuickActionItem("Back Office", Icons.Outlined.AdminPanelSettings, "dash_action_backoffice") {
+                viewModel.openBackOffice()
+            },
             QuickActionItem("Inventory", Icons.Outlined.Inventory2, "dash_action_inventory", onNavigateToInventory),
             QuickActionItem("Shift", Icons.Outlined.AccessTime, "dash_action_shift", onNavigateToShift),
             QuickActionItem("Customers", Icons.Outlined.PeopleOutline, "dash_action_customers", onNavigateToCustomers),
@@ -208,6 +215,16 @@ fun DashboardScreen(
                 }
             },
             actions = {
+                IconButton(
+                    onClick = { viewModel.openBackOffice() },
+                    modifier = Modifier.size(48.dp).testTag("dashboard_open_backoffice_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AdminPanelSettings,
+                        contentDescription = "Open Back Office",
+                        tint = LoyGreen,
+                    )
+                }
                 TopSyncIconButton(
                     syncing = session.syncing,
                     onClick = { viewModel.syncCloud() },

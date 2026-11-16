@@ -8,6 +8,7 @@ import com.loypos.app.core.DiscountInput
 import com.loypos.app.core.LowStockWorkScheduler
 import com.loypos.app.core.SaleTotals
 import com.loypos.app.core.computeTotals
+import com.loypos.app.core.formatQty
 import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
 import com.loypos.app.core.pointsForTotal
@@ -97,6 +98,11 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
     fun addProductToCart(product: ProductEntity, qty: Double = 1.0) {
         if (product.trackStock && product.stock <= 0.0) {
             _message.value = "${product.name} is out of stock"
+            return
+        }
+        val currentQty = _cartSession.value.items.firstOrNull { it.itemId == product.id }?.qty ?: 0.0
+        if (product.trackStock && currentQty + qty > product.stock) {
+            _message.value = "Only ${formatQty(product.stock)} ${product.name} in stock"
             return
         }
         _cartSession.update { state ->

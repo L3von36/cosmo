@@ -118,11 +118,12 @@ fun ItemThumbnail(
 fun StockDotBadge(
     item: ItemEntity,
     modifier: Modifier = Modifier,
+    threshold: Double = 3.0,
 ) {
     if (!item.trackStock) return
     val (dotColor, label) = when {
         item.stock <= 0.0 -> LoyError to "Out of stock"
-        item.stock <= 3.0 -> LoyWarning to "Low · ${if (item.stock == item.stock.toLong().toDouble()) item.stock.toLong() else item.stock} left"
+        item.stock < threshold -> LoyWarning to "Low · ${if (item.stock == item.stock.toLong().toDouble()) item.stock.toLong() else item.stock} left"
         else -> LoyGreen to "${if (item.stock == item.stock.toLong().toDouble()) item.stock.toLong() else item.stock} in stock"
     }
     Row(

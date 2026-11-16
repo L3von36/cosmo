@@ -2,16 +2,24 @@ package com.loypos.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.loypos.app.core.BackupManager
 import com.loypos.app.core.BackupResult
 import com.loypos.app.core.CloudSyncClient
+import com.loypos.app.core.CsvImportPreview
 import com.loypos.app.core.DiscountInput
+import com.loypos.app.core.InventoryCsvExportResult
+import com.loypos.app.core.InventoryCsvManager
 import com.loypos.app.core.ItemPhotos
 import com.loypos.app.core.LocalBackup
 import com.loypos.app.core.LowStockWorkScheduler
+import com.loypos.app.core.ReceiptPaperFormat
 import com.loypos.app.core.ReceiptPdfGenerator
+import com.loypos.app.core.ReceiptPdfPreviewResult
 import com.loypos.app.core.SaleTotals
 import com.loypos.app.core.SalesCsvExporter
 import com.loypos.app.core.SalesCsvReportResult
@@ -22,6 +30,7 @@ import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
 import com.loypos.app.core.startOfTodayMs
 import com.loypos.app.data.LoyPosRepository
+import com.loypos.app.data.local.BackOfficeUserEntity
 import com.loypos.app.data.local.BranchEntity
 import com.loypos.app.data.local.CartLine
 import com.loypos.app.data.local.CashMovementEntity
@@ -55,6 +64,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 enum class AuthStage { SPLASH, LOGGED_OUT, LOGGED_IN }
+enum class AppWorkspace { POS, BACK_OFFICE }
 
 data class LoyPosDataState(
     val settings: SettingsModel = SettingsModel(),
@@ -66,6 +76,7 @@ data class LoyPosDataState(
     val receipts: List<ReceiptWithLines> = emptyList(),
     val tickets: List<TicketWithLines> = emptyList(),
     val staff: List<UserEntity> = emptyList(),
+    val backOfficeAdmins: List<BackOfficeUserEntity> = emptyList(),
     val movements: List<StockMovementEntity> = emptyList(),
     val shifts: List<ShiftEntity> = emptyList(),
     val cashMovements: List<CashMovementEntity> = emptyList(),
@@ -73,9 +84,13 @@ data class LoyPosDataState(
 
 data class UiSessionState(
     val authStage: AuthStage = AuthStage.SPLASH,
+    val activeWorkspace: AppWorkspace = AppWorkspace.POS,
     val currentUser: UserEntity? = null,
+    val backOfficeUser: BackOfficeUserEntity? = null,
     val hasAnyUser: Boolean = false,
+    val hasAnyBackOfficeUser: Boolean = false,
     val activeBranchId: String? = null,
+    val backOfficeBranchFilterId: String? = null,
     val cart: List<CartLine> = emptyList(),
     val cartDiscount: DiscountInput? = null,
     val cartCustomerId: String? = null,
@@ -90,6 +105,8 @@ data class UiSessionState(
     val dbStats: DbStats = DbStats(),
     val localBackups: List<LocalBackup> = emptyList(),
     val integrityResult: String? = null,
+    val lowStockWorkerStatus: String = "Off",
+    val navigateToLowStockTrigger: Int = 0,
     val message: String? = null,
 )
 
@@ -129,7 +146,8 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
     private val shiftDataFlow = combine(
         repo.shiftsFlow,
         repo.cashMovementsFlow,
-    ) { shifts, cashMoves -> shifts to cashMoves }
+        repo.backOfficeUsersFlow,
+    ) { shifts, cashMoves, boAdmins -> Triple(shifts, cashMoves, boAdmins) }
 
     private val _inventorySearchQuery = MutableStateFlow("")
     val inventorySearchQuery: StateFlow<String> = _inventorySearchQuery.asStateFlow()
@@ -171,19 +189,44 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         _revenueTrendDays.value = days.coerceIn(7, 30)
     }
 
+    private val _backOfficeTrendDays = MutableStateFlow(14)
+    val backOfficeTrendDays: StateFlow<Int> = _backOfficeTrendDays.asStateFlow()
+
+    fun setBackOfficeTrendDays(days: Int) {
+        _backOfficeTrendDays.value = days.coerceIn(7, 30)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val backOfficeRevenueTrend: StateFlow<List<DailyRevenuePoint>> = combine(
+        _backOfficeTrendDays,
+        _session.map { it.backOfficeBranchFilterId }.distinctUntilChanged(),
+    ) { days, branchId -> days to branchId }
+        .flatMapLatest { (days, branchId) ->
+            val sinceMs = startOfTodayMs() - (days - 1).coerceAtLeast(0) * 86_400_000L
+            repo.observeCompletedSalesSince(sinceMs).map { sales ->
+                repo.computeDailyRevenueTrend(sales, days, branchId)
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
+
     val dataState: StateFlow<LoyPosDataState> = combine(
         coreDataFlow,
         salesDataFlow,
         shiftDataFlow,
-    ) { core, sales, shiftPair ->
+    ) { core, sales, shiftTriple ->
         core.copy(
             customers = sales.first,
             receipts = sales.second,
             tickets = sales.third.first,
             staff = sales.third.second,
             movements = sales.third.third,
-            shifts = shiftPair.first,
-            cashMovements = shiftPair.second,
+            shifts = shiftTriple.first,
+            cashMovements = shiftTriple.second,
+            backOfficeAdmins = shiftTriple.third,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -195,7 +238,9 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repo.ensureInitialized()
             val user = repo.currentSessionUser()
+            val boUser = repo.currentBackOfficeSessionUser()
             val anyUsers = repo.anyUsersExist()
+            val anyBoUsers = repo.anyBackOfficeUsersExist()
             val raw = repo.loadRawSettings()
             val branches = repo.dao.getActiveBranches()
             val savedBranch = raw["active_branch"]
@@ -204,20 +249,50 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 !savedBranch.isNullOrEmpty() && branches.any { it.id == savedBranch } -> savedBranch
                 else -> branches.firstOrNull()?.id
             }
+            val initialStage = if (user != null || boUser != null) AuthStage.LOGGED_IN else AuthStage.LOGGED_OUT
+            val initialWorkspace = if (user == null && boUser != null) AppWorkspace.BACK_OFFICE else AppWorkspace.POS
             _session.update {
                 it.copy(
-                    authStage = if (user != null) AuthStage.LOGGED_IN else AuthStage.LOGGED_OUT,
+                    authStage = initialStage,
+                    activeWorkspace = initialWorkspace,
                     currentUser = user,
+                    backOfficeUser = boUser,
                     hasAnyUser = anyUsers,
+                    hasAnyBackOfficeUser = anyBoUsers,
                     activeBranchId = resolvedBranch,
                     lastSyncMessage = raw["last_sync_msg"],
                 )
             }
             refreshHealthAndBackups()
             if (raw["low_stock_alerts_enabled"] == "true") {
-                LowStockWorkScheduler.schedulePeriodicCheck(appContext)
+                val intervalMin = (raw["low_stock_interval_minutes"]?.toLongOrNull() ?: 15L).coerceAtLeast(15L)
+                LowStockWorkScheduler.schedulePeriodicCheck(appContext, intervalMin)
             }
         }
+        viewModelScope.launch {
+            WorkManager.getInstance(appContext)
+                .getWorkInfosForUniqueWorkFlow(LowStockWorkScheduler.PERIODIC_WORK_NAME)
+                .collect { infos ->
+                    val active = infos.firstOrNull { !it.state.isFinished } ?: infos.firstOrNull()
+                    val statusLabel = when (active?.state) {
+                        WorkInfo.State.RUNNING -> "Scanning now"
+                        WorkInfo.State.ENQUEUED -> "Scheduled"
+                        WorkInfo.State.BLOCKED -> "Waiting"
+                        WorkInfo.State.SUCCEEDED -> "Completed"
+                        WorkInfo.State.FAILED -> "Retry pending"
+                        WorkInfo.State.CANCELLED, null -> "Off"
+                    }
+                    _session.update { it.copy(lowStockWorkerStatus = statusLabel) }
+                }
+        }
+    }
+
+    fun triggerLowStockNavigation() {
+        _session.update { it.copy(navigateToLowStockTrigger = it.navigateToLowStockTrigger + 1) }
+    }
+
+    fun consumeLowStockNavigation() {
+        _session.update { it.copy(navigateToLowStockTrigger = 0) }
     }
 
     fun consumeMessage() {
@@ -244,6 +319,7 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 _session.update {
                     it.copy(
                         authStage = AuthStage.LOGGED_IN,
+                        activeWorkspace = AppWorkspace.POS,
                         currentUser = user,
                         hasAnyUser = true,
                         activeBranchId = branchId,
@@ -272,6 +348,7 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 _session.update {
                     it.copy(
                         authStage = AuthStage.LOGGED_IN,
+                        activeWorkspace = AppWorkspace.POS,
                         currentUser = user,
                         hasAnyUser = true,
                         activeBranchId = raw["active_branch"],
@@ -290,13 +367,169 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
             repo.signOut()
             clearCart()
             val anyUsers = repo.anyUsersExist()
+            val anyBoUsers = repo.anyBackOfficeUsersExist()
             _session.update {
                 it.copy(
-                    authStage = AuthStage.LOGGED_OUT,
+                    authStage = if (it.backOfficeUser != null && it.activeWorkspace == AppWorkspace.BACK_OFFICE) AuthStage.LOGGED_IN else AuthStage.LOGGED_OUT,
+                    activeWorkspace = AppWorkspace.POS,
                     currentUser = null,
+                    hasAnyUser = anyUsers,
+                    hasAnyBackOfficeUser = anyBoUsers,
+                )
+            }
+        }
+    }
+
+    // --- Back Office Auth & Workspace Switching ---
+    fun signInBackOffice(email: String, password: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            val res = repo.signInBackOffice(email, password)
+            res.onSuccess { boUser ->
+                val branches = repo.dao.getActiveBranches()
+                val raw = repo.loadRawSettings()
+                val resolvedBranch = _session.value.activeBranchId
+                    ?: raw["active_branch"]?.takeIf { id -> branches.any { it.id == id } }
+                    ?: branches.firstOrNull()?.id
+                _session.update {
+                    it.copy(
+                        authStage = AuthStage.LOGGED_IN,
+                        activeWorkspace = AppWorkspace.BACK_OFFICE,
+                        backOfficeUser = boUser,
+                        hasAnyBackOfficeUser = true,
+                        activeBranchId = resolvedBranch,
+                    )
+                }
+                refreshHealthAndBackups()
+                onDone(null)
+            }.onFailure { err ->
+                onDone(err.message ?: "Back Office sign in failed")
+            }
+        }
+    }
+
+    fun signUpBackOffice(
+        email: String,
+        password: String,
+        fullName: String,
+        shopName: String,
+        onDone: (String?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val res = repo.signUpBackOfficeAdmin(email, password, fullName, shopName)
+            res.onSuccess { boUser ->
+                val branches = repo.dao.getActiveBranches()
+                val raw = repo.loadRawSettings()
+                val resolvedBranch = _session.value.activeBranchId
+                    ?: raw["active_branch"]?.takeIf { id -> branches.any { it.id == id } }
+                    ?: branches.firstOrNull()?.id
+                _session.update {
+                    it.copy(
+                        authStage = AuthStage.LOGGED_IN,
+                        activeWorkspace = AppWorkspace.BACK_OFFICE,
+                        backOfficeUser = boUser,
+                        hasAnyBackOfficeUser = true,
+                        activeBranchId = resolvedBranch,
+                    )
+                }
+                refreshHealthAndBackups()
+                onDone(null)
+            }.onFailure { err ->
+                onDone(err.message ?: "Back Office account setup failed")
+            }
+        }
+    }
+
+    fun signOutBackOffice() {
+        viewModelScope.launch {
+            repo.signOutBackOffice()
+            val anyBoUsers = repo.anyBackOfficeUsersExist()
+            val anyUsers = repo.anyUsersExist()
+            _session.update { state ->
+                val stayInAuthScreen = state.currentUser == null
+                state.copy(
+                    authStage = if (stayInAuthScreen) AuthStage.LOGGED_OUT else AuthStage.LOGGED_IN,
+                    backOfficeUser = null,
+                    hasAnyBackOfficeUser = anyBoUsers,
                     hasAnyUser = anyUsers,
                 )
             }
+        }
+    }
+
+    fun openBackOffice() {
+        viewModelScope.launch {
+            val anyBoUsers = repo.anyBackOfficeUsersExist()
+            _session.update {
+                it.copy(
+                    authStage = AuthStage.LOGGED_IN,
+                    activeWorkspace = AppWorkspace.BACK_OFFICE,
+                    hasAnyBackOfficeUser = anyBoUsers,
+                )
+            }
+        }
+    }
+
+    fun switchToPos() {
+        viewModelScope.launch {
+            val anyUsers = repo.anyUsersExist()
+            _session.update { state ->
+                if (state.currentUser != null) {
+                    state.copy(
+                        authStage = AuthStage.LOGGED_IN,
+                        activeWorkspace = AppWorkspace.POS,
+                        hasAnyUser = anyUsers,
+                    )
+                } else {
+                    state.copy(
+                        authStage = AuthStage.LOGGED_OUT,
+                        activeWorkspace = AppWorkspace.POS,
+                        hasAnyUser = anyUsers,
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectBackOfficeBranch(branchId: String?) {
+        _session.update { it.copy(backOfficeBranchFilterId = branchId) }
+    }
+
+    fun addBackOfficeAdmin(
+        fullName: String,
+        email: String,
+        password: String,
+        role: String,
+        onDone: (String?) -> Unit,
+    ) {
+        val shopName = dataState.value.settings.storeName
+        viewModelScope.launch {
+            val res = repo.addBackOfficeAdmin(fullName, email, password, role, shopName)
+            res.onSuccess {
+                _session.update { it.copy(hasAnyBackOfficeUser = true) }
+                showMessage("Back Office admin added")
+                onDone(null)
+            }.onFailure { err ->
+                onDone(err.message ?: "Could not add Back Office admin")
+            }
+        }
+    }
+
+    fun toggleBackOfficeAdminActive(id: String, active: Boolean) {
+        if (id == _session.value.backOfficeUser?.id) {
+            showMessage("Cannot deactivate the currently signed-in Back Office account")
+            return
+        }
+        viewModelScope.launch { repo.setBackOfficeUserActive(id, active) }
+    }
+
+    fun deleteBackOfficeAdmin(id: String) {
+        if (id == _session.value.backOfficeUser?.id) {
+            showMessage("Cannot delete the currently signed-in Back Office account")
+            return
+        }
+        viewModelScope.launch {
+            repo.deleteBackOfficeUser(id)
+            showMessage("Back Office admin removed")
         }
     }
 
@@ -456,6 +689,9 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                     lastCompletedReceipt = receipt,
                 )
             }
+            if (data.settings.lowStockAlertsEnabled) {
+                LowStockWorkScheduler.runImmediateCheck(appContext)
+            }
             refreshHealthAndBackups()
             onSuccess()
         }
@@ -469,6 +705,55 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // --- PDF & Sharing ---
+    fun generateReceiptPdfPreview(
+        receipt: ReceiptWithLines,
+        format: ReceiptPaperFormat,
+        onResult: (Result<ReceiptPdfPreviewResult>) -> Unit,
+    ) {
+        val data = dataState.value
+        val branch = data.branches.firstOrNull { it.id == receipt.receipt.branchId }
+        viewModelScope.launch {
+            val res = runCatching {
+                ReceiptPdfGenerator.generateReceiptPreview(
+                    context = appContext,
+                    receiptWithLines = receipt,
+                    settings = data.settings,
+                    branchName = branch?.name,
+                    branchAddress = branch?.address,
+                    format = format,
+                )
+            }
+            res.onFailure {
+                showMessage("Could not render receipt PDF: ${it.message}")
+            }
+            onResult(res)
+        }
+    }
+
+    fun saveReceiptPdfToUri(uri: Uri, pdfFile: File) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openOutputStream(uri)?.use { out ->
+                        pdfFile.inputStream().use { input -> input.copyTo(out) }
+                        out.flush()
+                    } ?: throw IllegalStateException("Could not open destination PDF")
+                }
+                showMessage("Saved ${pdfFile.name}")
+            }.onFailure {
+                showMessage("Could not save PDF: ${it.message}")
+            }
+        }
+    }
+
+    fun shareGeneratedPdfFile(pdfFile: File) {
+        runCatching {
+            ReceiptPdfGenerator.sharePdfFile(appContext, pdfFile)
+        }.onFailure {
+            showMessage("Could not share PDF: ${it.message}")
+        }
+    }
+
     fun shareReceiptPdf(receipt: ReceiptWithLines) {
         val data = dataState.value
         val branch = data.branches.firstOrNull { it.id == receipt.receipt.branchId }
@@ -564,6 +849,9 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             repo.saveItem(item.copy(imagePath = finalPath))
+            if (dataState.value.settings.lowStockAlertsEnabled) {
+                LowStockWorkScheduler.runImmediateCheck(appContext)
+            }
             showMessage("Item saved")
         }
     }
@@ -592,6 +880,9 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
     fun receiveStock(itemId: String, qty: Double, note: String) {
         viewModelScope.launch {
             repo.receiveStock(itemId, qty, note)
+            if (dataState.value.settings.lowStockAlertsEnabled) {
+                LowStockWorkScheduler.runImmediateCheck(appContext)
+            }
             showMessage("Stock updated")
         }
     }
@@ -599,7 +890,24 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
     fun setStockCount(itemId: String, newCount: Double, note: String) {
         viewModelScope.launch {
             repo.adjustStock(itemId, newCount, type = "adjust", note = note)
+            if (dataState.value.settings.lowStockAlertsEnabled) {
+                LowStockWorkScheduler.runImmediateCheck(appContext)
+            }
             showMessage("Stock count updated")
+        }
+    }
+
+    fun batchRestockLowItems(itemIds: List<String>, targetStock: Double) {
+        viewModelScope.launch {
+            val count = repo.batchRestockToTarget(itemIds, targetStock, note = "Quick batch restock")
+            if (count > 0) {
+                if (dataState.value.settings.lowStockAlertsEnabled) {
+                    LowStockWorkScheduler.runImmediateCheck(appContext)
+                }
+                showMessage("Restocked $count ${if (count == 1) "item" else "items"} to ${formatQty(targetStock)}")
+            } else {
+                showMessage("All selected items already meet or exceed ${formatQty(targetStock)}")
+            }
         }
     }
 
@@ -675,14 +983,19 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updateLowStockAlertSettings(enabled: Boolean, threshold: Double) {
+    fun updateLowStockAlertSettings(
+        enabled: Boolean,
+        threshold: Double,
+        intervalMinutes: Long = dataState.value.settings.lowStockIntervalMinutes,
+    ) {
         val cleanThreshold = threshold.coerceAtLeast(0.0)
+        val cleanInterval = intervalMinutes.coerceAtLeast(15L)
         viewModelScope.launch {
-            repo.saveLowStockAlertSettings(enabled, cleanThreshold)
+            repo.saveLowStockAlertSettings(enabled, cleanThreshold, cleanInterval)
             if (enabled) {
-                LowStockWorkScheduler.schedulePeriodicCheck(appContext)
-                LowStockWorkScheduler.runImmediateCheck(appContext)
-                showMessage("Low-stock alerts enabled (< ${formatQty(cleanThreshold)})")
+                LowStockWorkScheduler.schedulePeriodicCheck(appContext, cleanInterval)
+                LowStockWorkScheduler.runImmediateCheck(appContext, forceNotify = true)
+                showMessage("WorkManager alerts active (every ${cleanInterval}m, < ${formatQty(cleanThreshold)})")
             } else {
                 LowStockWorkScheduler.cancelPeriodicCheck(appContext)
                 showMessage("Low-stock alerts disabled")
@@ -694,15 +1007,20 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val settings = dataState.value.settings
             val lowItems = repo.getLowStockProducts(settings.lowStockThreshold)
-            if (settings.lowStockAlertsEnabled) {
-                LowStockWorkScheduler.runImmediateCheck(appContext)
-            }
+            LowStockWorkScheduler.runImmediateCheck(appContext, forceNotify = true)
             if (lowItems.isEmpty()) {
                 showMessage("All tracked items are at or above ${formatQty(settings.lowStockThreshold)}")
             } else {
                 val msg = "${lowItems.size} ${if (lowItems.size == 1) "item" else "items"} below ${formatQty(settings.lowStockThreshold)}"
                 showMessage(msg)
             }
+        }
+    }
+
+    fun updateDailyRevenueTarget(targetCents: Long) {
+        viewModelScope.launch {
+            repo.saveDailyRevenueTarget(targetCents)
+            showMessage(if (targetCents > 0L) "Daily revenue goal updated" else "Daily revenue goal cleared")
         }
     }
 
@@ -782,6 +1100,138 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 showMessage("Could not save CSV: ${it.message}")
             }
         }
+    }
+
+    // --- Inventory CSV Export & Bulk Product Import ---
+    fun buildInventoryCsvExport(
+        includeArchived: Boolean,
+        onResult: (InventoryCsvExportResult?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repo.buildInventoryCsvExport(includeArchived)
+            }.onSuccess { onResult(it) }
+                .onFailure {
+                    showMessage("Could not prepare inventory CSV: ${it.message}")
+                    onResult(null)
+                }
+        }
+    }
+
+    fun shareInventoryCsv(includeArchived: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                val export = repo.buildInventoryCsvExport(includeArchived)
+                withContext(Dispatchers.Main) {
+                    InventoryCsvManager.writeTempCsvAndShare(
+                        context = appContext,
+                        filename = export.filename,
+                        csvContent = export.csvContent,
+                        chooserTitle = "Export Inventory CSV",
+                        subject = "LoyPOS Inventory (${export.itemCount} items)",
+                    )
+                }
+                showMessage("Inventory CSV ready (${export.itemCount} items)")
+            }.onFailure {
+                showMessage("Inventory CSV export failed: ${it.message}")
+            }
+        }
+    }
+
+    fun writeInventoryCsvToUri(uri: Uri, exportResult: InventoryCsvExportResult) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(exportResult.csvContent.toByteArray(Charsets.UTF_8))
+                        stream.flush()
+                    } ?: throw IllegalStateException("Could not open destination file")
+                }
+                showMessage("Saved ${exportResult.filename} (${exportResult.itemCount} items)")
+            }.onFailure {
+                showMessage("Could not save inventory CSV: ${it.message}")
+            }
+        }
+    }
+
+    fun writeInventoryTemplateCsvToUri(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val template = InventoryCsvManager.buildTemplateCsv()
+                withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(template.toByteArray(Charsets.UTF_8))
+                        stream.flush()
+                    } ?: throw IllegalStateException("Could not open destination file")
+                }
+                showMessage("Saved loypos-inventory-template.csv")
+            }.onFailure {
+                showMessage("Could not save CSV template: ${it.message}")
+            }
+        }
+    }
+
+    fun previewInventoryCsvFromUri(
+        uri: Uri,
+        onResult: (Result<CsvImportPreview>) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                val filename = withContext(Dispatchers.IO) { resolveDisplayName(uri) }
+                val raw = withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
+                        it.readText()
+                    } ?: throw IllegalStateException("Could not read selected CSV file")
+                }
+                repo.previewInventoryCsvImport(rawCsv = raw, filenameLabel = filename)
+            }
+            result.onFailure {
+                showMessage("CSV read failed: ${it.message}")
+            }
+            onResult(result)
+        }
+    }
+
+    fun commitInventoryCsvImport(
+        preview: CsvImportPreview,
+        skipExisting: Boolean,
+        onDone: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repo.commitInventoryCsvImport(preview.rows, skipExisting)
+            }.onSuccess { res ->
+                refreshHealthAndBackups()
+                if (dataState.value.settings.lowStockAlertsEnabled) {
+                    LowStockWorkScheduler.runImmediateCheck(appContext)
+                }
+                val parts = buildList {
+                    if (res.insertedCount > 0) add("${res.insertedCount} added")
+                    if (res.updatedCount > 0) add("${res.updatedCount} updated")
+                    if (res.createdCategoriesCount > 0) add("${res.createdCategoriesCount} new categories")
+                    if (res.skippedCount > 0) add("${res.skippedCount} skipped")
+                }
+                showMessage(
+                    if (parts.isEmpty()) "No changes imported" else "CSV import: ${parts.joinToString(", ")}"
+                )
+                onDone()
+            }.onFailure {
+                showMessage("CSV import failed: ${it.message}")
+            }
+        }
+    }
+
+    private fun resolveDisplayName(uri: Uri): String {
+        appContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) {
+                    val name = cursor.getString(idx)
+                    if (!name.isNullOrBlank()) return name
+                }
+            }
+        }
+        return uri.lastPathSegment?.substringAfterLast('/')?.ifBlank { "inventory.csv" } ?: "inventory.csv"
     }
 
     fun saveLocalSafetyBackup() {

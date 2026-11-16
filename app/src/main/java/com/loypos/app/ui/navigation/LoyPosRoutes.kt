@@ -43,3 +43,28 @@ data object CustomersRoute
 
 @Serializable
 data object ReportsRoute
+
+@Serializable
+data object BackOfficeOverviewRoute
+
+@Serializable
+data object BackOfficeInventoryRoute
+
+@Serializable
+data object BackOfficeStockRoute
+
+@Serializable
+data object BackOfficeReportsRoute
+
+@Serializable
+data object BackOfficeAdminRoute
+
+@Serializable
+data object BackOfficeCustomersRoute
+
+@Serializable
+data object BackOfficeReceiptsRoute
+
+@Serializable
+data class BackOfficeReceiptDetailRoute(val receiptId: String)
+
