@@ -1,0 +1,45 @@
+package com.loypos.app.ui.navigation
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data object DashboardRoute
+
+@Serializable
+data object CheckoutRoute
+
+@Serializable
+data object InventoryRoute
+
+@Serializable
+data object ReceiptsRoute
+
+@Serializable
+data object ShiftRoute
+
+@Serializable
+data object SettingsRoute
+
+@Serializable
+data object AccountRoute
+
+@Serializable
+data object CartRoute
+
+@Serializable
+data object PaymentRoute
+
+@Serializable
+data object ReceiptSuccessRoute
+
+@Serializable
+data class ReceiptDetailRoute(val receiptId: String)
+
+@Serializable
+data object StockRoute
+
+@Serializable
+data object CustomersRoute
+
+@Serializable
+data object ReportsRoute

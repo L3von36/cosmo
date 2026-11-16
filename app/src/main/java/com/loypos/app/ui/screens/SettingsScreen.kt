@@ -1,0 +1,781 @@
+package com.loypos.app.ui.screens
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Assessment
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.HealthAndSafety
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.PeopleOutline
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.Upload
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import com.loypos.app.core.LocalBackup
+import com.loypos.app.core.formatBytes
+import com.loypos.app.core.newId
+import com.loypos.app.core.nowMs
+import com.loypos.app.data.local.BranchEntity
+import com.loypos.app.ui.LoyPosDataState
+import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.UiSessionState
+import com.loypos.app.ui.components.ConfirmDialog
+import com.loypos.app.ui.components.GroupCard
+import com.loypos.app.ui.components.PillBadge
+import com.loypos.app.ui.components.SectionHeader
+import com.loypos.app.ui.components.TopSyncIconButton
+import com.loypos.app.ui.theme.LoyBackground
+import com.loypos.app.ui.theme.LoyBorder
+import com.loypos.app.ui.theme.LoyError
+import com.loypos.app.ui.theme.LoyGreen
+import com.loypos.app.ui.theme.LoySurface
+import com.loypos.app.ui.theme.LoyTextSecondary
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CashierAccountScreen(
+    viewModel: LoyPosViewModel,
+    session: UiSessionState,
+    data: LoyPosDataState,
+) {
+    val user = session.currentUser
+    val branch = data.branches.firstOrNull { it.id == session.activeBranchId }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
+        TopAppBar(
+            title = { Text("Account", fontWeight = FontWeight.Bold) },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
+        )
+        HorizontalDivider(color = LoyBorder)
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            GroupCard {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LoyGreen)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(user?.ownerName?.ifEmpty { user.email } ?: "Seller", fontWeight = FontWeight.Bold)
+                            Text(user?.email ?: "", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                        }
+                        PillBadge("Seller")
+                    }
+                    if (branch != null) {
+                        Text("Assigned branch: ${branch.name}", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                    }
+                }
+            }
+
+            Button(
+                onClick = { showSignOutConfirm = true },
+                colors = ButtonDefaults.buttonColors(containerColor = LoyError, contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("cashier_sign_out_button"),
+            ) {
+                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Sign out")
+            }
+        }
+    }
+
+    if (showSignOutConfirm) {
+        ConfirmDialog(
+            title = "Sign out?",
+            message = "You will return to the sign-in screen.",
+            confirmLabel = "Sign out",
+            destructive = true,
+            onConfirm = {
+                showSignOutConfirm = false
+                viewModel.signOut()
+            },
+            onDismiss = { showSignOutConfirm = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    viewModel: LoyPosViewModel,
+    session: UiSessionState,
+    data: LoyPosDataState,
+    onNavigateToStock: () -> Unit,
+    onNavigateToCustomers: () -> Unit,
+    onNavigateToReports: () -> Unit,
+    onNavigateToShift: () -> Unit,
+) {
+    val user = session.currentUser
+    var showStoreDialog by remember { mutableStateOf(false) }
+    var showTaxDialog by remember { mutableStateOf(false) }
+    var showAddStaffDialog by remember { mutableStateOf(false) }
+    var editingBranch by remember { mutableStateOf<BranchEntity?>(null) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
+    var showResetConfirm by remember { mutableStateOf(false) }
+    var pendingRestoreBackup by remember { mutableStateOf<LocalBackup?>(null) }
+
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importFromUri(uri)
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
+        TopAppBar(
+            title = { Text("Settings", fontWeight = FontWeight.Bold) },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
+            actions = {
+                TopSyncIconButton(syncing = session.syncing, onClick = { viewModel.syncCloud() })
+            },
+        )
+        HorizontalDivider(color = LoyBorder)
+
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Account
+            item {
+                SectionHeader("Account")
+                GroupCard {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LoyGreen)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(user?.ownerName?.ifEmpty { data.settings.storeName } ?: data.settings.storeName, fontWeight = FontWeight.Bold)
+                                Text(user?.email ?: "", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                            }
+                            PillBadge("Owner")
+                        }
+                        OutlinedButton(
+                            onClick = { showSignOutConfirm = true },
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("owner_sign_out_button"),
+                        ) {
+                            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, tint = LoyError)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Sign out", color = LoyError)
+                        }
+                    }
+                }
+            }
+
+            // Back Office
+            item {
+                SectionHeader("Back Office")
+                GroupCard {
+                    SettingsNavRow(
+                        icon = Icons.Outlined.AccessTime,
+                        title = "Shift & Cash Drawer",
+                        subtitle = "Open/close cash register shift and movements",
+                        onClick = onNavigateToShift,
+                        modifier = Modifier.testTag("nav_backoffice_shift"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Inventory2,
+                        title = "Inventory & Stock",
+                        subtitle = "${data.items.count { it.trackStock && it.stock <= 3.0 }} low or out of stock",
+                        onClick = onNavigateToStock,
+                        modifier = Modifier.testTag("nav_backoffice_stock"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.PeopleOutline,
+                        title = "Customers",
+                        subtitle = "${data.customers.size} registered customers",
+                        onClick = onNavigateToCustomers,
+                        modifier = Modifier.testTag("nav_backoffice_customers"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Assessment,
+                        title = "Sales Reports",
+                        subtitle = "${data.receipts.size} receipts recorded",
+                        onClick = onNavigateToReports,
+                        modifier = Modifier.testTag("nav_backoffice_reports"),
+                    )
+                }
+            }
+
+            // Branches
+            item {
+                SectionHeader("Branches")
+                GroupCard {
+                    data.branches.forEachIndexed { idx, branch ->
+                        if (idx > 0) HorizontalDivider(color = LoyBorder)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { editingBranch = branch }
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Outlined.Storefront, contentDescription = null, tint = LoyGreen)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(branch.name, fontWeight = FontWeight.Medium)
+                                if (branch.address.isNotEmpty()) {
+                                    Text(branch.address, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                }
+                            }
+                            if (branch.id == session.activeBranchId) {
+                                PillBadge("Active")
+                            }
+                            Icon(Icons.Outlined.Edit, contentDescription = "Edit branch", tint = LoyTextSecondary, modifier = Modifier.padding(start = 6.dp).size(18.dp))
+                        }
+                    }
+                    HorizontalDivider(color = LoyBorder)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable {
+                                editingBranch = BranchEntity(id = newId(), name = "", createdAt = nowMs())
+                            }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Add branch", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            // Staff
+            item {
+                SectionHeader("Staff & Sellers")
+                GroupCard {
+                    if (data.staff.isEmpty()) {
+                        Text(
+                            "No seller accounts yet. Add cashiers pinned to a specific branch.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                            modifier = Modifier.padding(14.dp),
+                        )
+                    } else {
+                        data.staff.forEachIndexed { idx, seller ->
+                            if (idx > 0) HorizontalDivider(color = LoyBorder)
+                            val branchName = data.branches.firstOrNull { it.id == seller.branchId }?.name ?: "Branch"
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(seller.ownerName.ifEmpty { seller.email }, fontWeight = FontWeight.Medium)
+                                    Text("${seller.email} · $branchName", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                }
+                                Switch(
+                                    checked = seller.active,
+                                    onCheckedChange = { viewModel.toggleStaffActive(seller.id, it) },
+                                )
+                                IconButton(onClick = { viewModel.deleteStaff(seller.id) }) {
+                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete seller", tint = LoyError)
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = LoyBorder)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable { showAddStaffDialog = true }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Add seller account", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            // Store & Tax
+            item {
+                SectionHeader("Store & Taxes")
+                GroupCard {
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Storefront,
+                        title = "Store profile & receipt footer",
+                        subtitle = "${data.settings.storeName} · ${data.settings.currencySymbol}",
+                        onClick = { showStoreDialog = true },
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Assessment,
+                        title = "Currency & Tax",
+                        subtitle = "${data.settings.currencySymbol} · ${data.settings.taxRatePercent}% (${if (data.settings.taxIncluded) "included" else "added"})",
+                        onClick = { showTaxDialog = true },
+                    )
+                }
+            }
+
+            // Data Export & Import
+            item {
+                SectionHeader("Data & Safety Backups")
+                GroupCard {
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Upload,
+                        title = "Export shop data (JSON)",
+                        subtitle = "Share portable loypos-export v1 file with photos",
+                        onClick = { viewModel.exportData() },
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Download,
+                        title = "Import shop data (JSON)",
+                        subtitle = "Replaces catalog & receipts (creates safety backup first)",
+                        onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Backup,
+                        title = "Save local safety copy",
+                        subtitle = "${session.localBackups.size} saved on device",
+                        onClick = { viewModel.saveLocalSafetyBackup() },
+                    )
+                    if (session.localBackups.isNotEmpty()) {
+                        session.localBackups.forEach { backup ->
+                            HorizontalDivider(color = LoyBorder)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { pendingRestoreBackup = backup }
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.Restore, contentDescription = null, tint = LoyTextSecondary)
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Restore: ${backup.label}", style = MaterialTheme.typography.bodyMedium)
+                                    Text(backup.sizeLabel, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Storage & Health + Cloud Sync
+            item {
+                SectionHeader("Storage, Health & Cloud")
+                GroupCard {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val s = session.dbStats
+                        Text(
+                            "${s.items} items · ${s.categories} categories · ${s.receipts} receipts · ${s.customers} customers",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                        Text(
+                            "Database size: ${formatBytes(s.fileBytes)}${if (session.integrityResult != null) " · Integrity: ${session.integrityResult}" else ""}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { viewModel.checkIntegrity() }, modifier = Modifier.weight(1f).height(46.dp)) {
+                                Icon(Icons.Outlined.HealthAndSafety, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Verify")
+                            }
+                            OutlinedButton(onClick = { viewModel.optimiseDatabase() }, modifier = Modifier.weight(1f).height(46.dp)) {
+                                Text("Optimise")
+                            }
+                        }
+                    }
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.CloudSync,
+                        title = if (session.syncing) "Syncing..." else "Sync with LoyPOS Cloud",
+                        subtitle = session.lastSyncMessage ?: "Offline-first SQLite active",
+                        onClick = { viewModel.syncCloud() },
+                    )
+                }
+            }
+
+            // Danger Zone
+            item {
+                SectionHeader("Danger Zone")
+                GroupCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 54.dp)
+                            .clickable { showResetConfirm = true }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.RestartAlt, contentDescription = null, tint = LoyError)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Reset all shop data", color = LoyError, fontWeight = FontWeight.SemiBold)
+                            Text("Restores the 300-item demo catalog after saving a safety copy", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    if (showStoreDialog) {
+        StoreSettingsDialog(
+            initialName = data.settings.storeName,
+            initialFooter = data.settings.receiptFooter,
+            onSave = { name, footer ->
+                viewModel.saveShopSettings(storeName = name, receiptFooter = footer)
+                showStoreDialog = false
+            },
+            onDismiss = { showStoreDialog = false },
+        )
+    }
+
+    if (showTaxDialog) {
+        TaxSettingsDialog(
+            initialCurrency = data.settings.currencySymbol,
+            initialRate = data.settings.taxRatePercent,
+            initialIncluded = data.settings.taxIncluded,
+            onSave = { cur, rate, inc ->
+                viewModel.saveShopSettings(currencySymbol = cur, taxRatePercent = rate, taxIncluded = inc)
+                showTaxDialog = false
+            },
+            onDismiss = { showTaxDialog = false },
+        )
+    }
+
+    if (showAddStaffDialog) {
+        AddStaffDialog(
+            branches = data.branches,
+            onSave = { name, email, pin, branchId, onDone ->
+                viewModel.addStaff(name, email, pin, branchId) { err ->
+                    if (err == null) showAddStaffDialog = false
+                    onDone(err)
+                }
+            },
+            onDismiss = { showAddStaffDialog = false },
+        )
+    }
+
+    editingBranch?.let { branch ->
+        val isNew = data.branches.none { it.id == branch.id }
+        BranchEditorDialog(
+            branch = branch,
+            isNew = isNew,
+            canArchive = !isNew && data.branches.size > 1,
+            onSave = {
+                viewModel.saveBranch(it)
+                editingBranch = null
+            },
+            onArchive = {
+                viewModel.archiveBranch(branch.id)
+                editingBranch = null
+            },
+            onDismiss = { editingBranch = null },
+        )
+    }
+
+    if (showSignOutConfirm) {
+        ConfirmDialog(
+            title = "Sign out?",
+            message = "Your offline catalog and receipts stay saved on this device.",
+            confirmLabel = "Sign out",
+            destructive = true,
+            onConfirm = {
+                showSignOutConfirm = false
+                viewModel.signOut()
+            },
+            onDismiss = { showSignOutConfirm = false },
+        )
+    }
+
+    if (showResetConfirm) {
+        ConfirmDialog(
+            title = "Reset all shop data?",
+            message = "A local safety backup will be created first, then the catalog and receipts will be reset to defaults.",
+            confirmLabel = "Reset",
+            destructive = true,
+            onConfirm = {
+                showResetConfirm = false
+                viewModel.resetAllData()
+            },
+            onDismiss = { showResetConfirm = false },
+        )
+    }
+
+    pendingRestoreBackup?.let { backup ->
+        ConfirmDialog(
+            title = "Restore safety backup?",
+            message = "Restore snapshot from ${backup.label} (${backup.sizeLabel})? Current shop data will be backed up first.",
+            confirmLabel = "Restore",
+            onConfirm = {
+                val target = backup
+                pendingRestoreBackup = null
+                viewModel.restoreSafetyBackup(target)
+            },
+            onDismiss = { pendingRestoreBackup = null },
+        )
+    }
+}
+
+@Composable
+private fun SettingsNavRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = LoyGreen)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+        }
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = LoyTextSecondary)
+    }
+}
+
+@Composable
+private fun StoreSettingsDialog(
+    initialName: String,
+    initialFooter: String,
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var footer by remember { mutableStateOf(initialFooter) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Store & Receipt") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Store name") }, singleLine = true)
+                OutlinedTextField(value = footer, onValueChange = { footer = it }, label = { Text("Receipt footer") }, maxLines = 3)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(name.trim().ifEmpty { "My Store" }, footer.trim()) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun TaxSettingsDialog(
+    initialCurrency: String,
+    initialRate: Double,
+    initialIncluded: Boolean,
+    onSave: (String, Double, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var cur by remember { mutableStateOf(initialCurrency) }
+    var rateText by remember { mutableStateOf(if (initialRate == 0.0) "0" else initialRate.toString()) }
+    var included by remember { mutableStateOf(initialIncluded) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Currency & Tax") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = cur, onValueChange = { cur = it }, label = { Text("Currency symbol") }, singleLine = true)
+                OutlinedTextField(
+                    value = rateText,
+                    onValueChange = { rateText = it },
+                    label = { Text("Tax rate (%)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tax included in prices")
+                    Switch(checked = included, onCheckedChange = { included = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val rate = rateText.replace(",", ".").toDoubleOrNull()?.coerceIn(0.0, 100.0) ?: 0.0
+                    onSave(cur.trim().ifEmpty { "Br" }, rate, included)
+                },
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddStaffDialog(
+    branches: List<BranchEntity>,
+    onSave: (String, String, String, String, (String?) -> Unit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var pin by remember { mutableStateOf("") }
+    var branchId by remember { mutableStateOf(branches.firstOrNull()?.id ?: "") }
+    var expanded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Seller Account") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Seller name") }, singleLine = true)
+                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true)
+                OutlinedTextField(value = pin, onValueChange = { pin = it }, label = { Text("Password / PIN (min 6 chars)") }, singleLine = true)
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                    val bName = branches.firstOrNull { it.id == branchId }?.name ?: "Select branch"
+                    OutlinedTextField(
+                        value = bName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Branch") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        branches.forEach { b ->
+                            DropdownMenuItem(text = { Text(b.name) }, onClick = { branchId = b.id; expanded = false })
+                        }
+                    }
+                }
+                if (error != null) Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(name, email, pin, branchId) { err -> error = err }
+                },
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text("Add seller") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun BranchEditorDialog(
+    branch: BranchEntity,
+    isNew: Boolean,
+    canArchive: Boolean,
+    onSave: (BranchEntity) -> Unit,
+    onArchive: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(branch.name) }
+    var address by remember { mutableStateOf(branch.address) }
+    var phone by remember { mutableStateOf(branch.phone) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isNew) "New Branch" else "Edit Branch") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Branch name *") }, singleLine = true)
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, singleLine = true)
+                OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.trim().isNotEmpty()) {
+                        onSave(branch.copy(name = name.trim(), address = address.trim(), phone = phone.trim()))
+                    }
+                },
+                enabled = name.trim().isNotEmpty(),
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            Row {
+                if (canArchive) {
+                    TextButton(onClick = onArchive, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("Delete", color = LoyError)
+                    }
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+            }
+        },
+    )
+}

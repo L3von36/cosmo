@@ -1,0 +1,685 @@
+package com.loypos.app.ui.screens
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.LocalOffer
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.loypos.app.core.formatCents
+import com.loypos.app.core.formatQty
+import com.loypos.app.core.newId
+import com.loypos.app.core.parseAmountToCents
+import com.loypos.app.core.parseQty
+import com.loypos.app.data.local.CategoryEntity
+import com.loypos.app.data.local.ItemEntity
+import com.loypos.app.ui.LoyPosDataState
+import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.UiSessionState
+import com.loypos.app.ui.components.EmptyState
+import com.loypos.app.ui.components.GroupCard
+import com.loypos.app.ui.components.ItemThumbnail
+import com.loypos.app.ui.components.StockDotBadge
+import com.loypos.app.ui.components.TopSyncIconButton
+import com.loypos.app.ui.components.categoryIconFor
+import com.loypos.app.ui.theme.LoyBackground
+import com.loypos.app.ui.theme.LoyBorder
+import com.loypos.app.ui.theme.LoyError
+import com.loypos.app.ui.theme.LoyGreen
+import com.loypos.app.ui.theme.LoySurface
+import com.loypos.app.ui.theme.LoyTextSecondary
+import com.loypos.app.ui.theme.TabularMoneyStyle
+import com.loypos.app.ui.theme.tileColorFor
+import java.io.File
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ItemsScreen(
+    viewModel: LoyPosViewModel,
+    session: UiSessionState,
+    data: LoyPosDataState,
+    onNavigateToStock: () -> Unit,
+) {
+    var tabIndex by remember { mutableIntStateOf(0) }
+    var search by remember { mutableStateOf("") }
+    var editingItem by remember { mutableStateOf<ItemEntity?>(null) }
+    var isCreatingItem by remember { mutableStateOf(false) }
+    var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
+    var isCreatingCategory by remember { mutableStateOf(false) }
+
+    val sym = data.settings.currencySymbol
+    val filteredItems = remember(data.items, search) {
+        val q = search.trim().lowercase()
+        if (q.isEmpty()) data.items else data.items.filter {
+            it.name.lowercase().contains(q) || it.sku.lowercase().contains(q) || it.barcode.lowercase().contains(q)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text("Inventory", fontWeight = FontWeight.Bold) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
+                    actions = {
+                        TextButton(
+                            onClick = onNavigateToStock,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("inventory_stock_button"),
+                        ) {
+                            Text("Stock", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                        }
+                        TopSyncIconButton(syncing = session.syncing, onClick = { viewModel.syncCloud() })
+                    },
+                )
+                TabRow(selectedTabIndex = tabIndex, containerColor = LoySurface) {
+                    Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Items (${data.items.size})") })
+                    Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Categories (${data.categories.size})") })
+                    Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }, text = { Text("Discounts") })
+                }
+            }
+        },
+        floatingActionButton = {
+            if (tabIndex == 0 || tabIndex == 1) {
+                FloatingActionButton(
+                    onClick = {
+                        if (tabIndex == 0) {
+                            isCreatingItem = true
+                            editingItem = ItemEntity(
+                                id = newId(),
+                                categoryId = data.categories.firstOrNull()?.id,
+                                name = "",
+                                priceCents = 0L,
+                                trackStock = true,
+                                stock = 0.0,
+                            )
+                        } else {
+                            isCreatingCategory = true
+                            editingCategory = CategoryEntity(
+                                id = newId(),
+                                name = "",
+                                position = data.categories.size,
+                            )
+                        }
+                    },
+                    containerColor = LoyGreen,
+                    contentColor = Color.White,
+                    modifier = Modifier.testTag("items_fab_add"),
+                ) {
+                    Icon(Icons.Outlined.Add, contentDescription = if (tabIndex == 0) "New item" else "New category")
+                }
+            }
+        },
+        containerColor = LoyBackground,
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            when (tabIndex) {
+                0 -> {
+                    OutlinedTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        placeholder = { Text("Search items, SKU, barcode") },
+                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(LoySurface)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+
+                    if (filteredItems.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            EmptyState(
+                                icon = Icons.Outlined.Inventory2,
+                                title = "No items found",
+                                subtitle = "Tap + to add a product to your catalog.",
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(14.dp, 10.dp, 14.dp, 88.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(filteredItems, key = { it.id }) { item ->
+                                val catName = data.categories.firstOrNull { it.id == item.categoryId }?.name ?: "Uncategorized"
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = LoySurface,
+                                    border = BorderStroke(1.dp, LoyBorder),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            isCreatingItem = false
+                                            editingItem = item
+                                        }
+                                        .testTag("manage_item_${item.id}"),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        ItemThumbnail(item = item, size = 44.dp)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(item.name, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "$catName${if (item.sku.isNotEmpty()) " · ${item.sku}" else ""}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = LoyTextSecondary,
+                                            )
+                                            StockDotBadge(item = item)
+                                        }
+                                        Text(
+                                            formatCents(item.priceCents, sym),
+                                            style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                1 -> {
+                    if (data.categories.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            EmptyState(
+                                icon = Icons.Outlined.Category,
+                                title = "No categories",
+                                subtitle = "Tap + to create a product category.",
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(14.dp, 14.dp, 14.dp, 88.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(data.categories, key = { it.id }) { cat ->
+                                val count = data.items.count { it.categoryId == cat.id }
+                                val tint = tileColorFor(cat.id)
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = LoySurface,
+                                    border = BorderStroke(1.dp, LoyBorder),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            isCreatingCategory = false
+                                            editingCategory = cat
+                                        },
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(tint.copy(alpha = 0.14f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(categoryIconFor(cat.id), contentDescription = null, tint = tint)
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(cat.name, fontWeight = FontWeight.SemiBold)
+                                            Text("$count items", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                2 -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        GroupCard {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Icon(Icons.Outlined.LocalOffer, contentDescription = null, tint = LoyGreen)
+                                    Text("Ticket Discounts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+                                Text(
+                                    "LoyPOS supports whole-sale percentage discounts (5%, 10%, 15%, 20%, 25%, or custom %) and fixed currency discounts directly on the Sales ticket panel.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = LoyTextSecondary,
+                                )
+                                Text(
+                                    "Tap the Discount chip inside any active sale or open ticket to apply or remove a discount before charging.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = LoyTextSecondary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    editingItem?.let { item ->
+        ItemEditorBottomSheet(
+            item = item,
+            isNew = isCreatingItem,
+            data = data,
+            onSave = { updated, pickedUri, removePhoto ->
+                viewModel.saveItem(updated, pickedUri, removePhoto)
+                editingItem = null
+            },
+            onDelete = {
+                viewModel.deleteItem(item.id)
+                editingItem = null
+            },
+            onDismiss = { editingItem = null },
+        )
+    }
+
+    editingCategory?.let { cat ->
+        CategoryEditorDialog(
+            category = cat,
+            isNew = isCreatingCategory,
+            onSave = { name ->
+                viewModel.saveCategory(cat.id, name, cat.position)
+                editingCategory = null
+            },
+            onDelete = {
+                viewModel.deleteCategory(cat.id)
+                editingCategory = null
+            },
+            onDismiss = { editingCategory = null },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ItemEditorBottomSheet(
+    item: ItemEntity,
+    isNew: Boolean,
+    data: LoyPosDataState,
+    onSave: (ItemEntity, Uri?, Boolean) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(item.name) }
+    var categoryId by remember { mutableStateOf(item.categoryId) }
+    var catExpanded by remember { mutableStateOf(false) }
+    var priceText by remember {
+        mutableStateOf(if (item.priceCents == 0L) "" else (item.priceCents / 100.0).let { if (item.priceCents % 100L == 0L) (item.priceCents / 100L).toString() else "%.2f".format(it) })
+    }
+    var costText by remember {
+        mutableStateOf(if (item.costCents == 0L) "" else (item.costCents / 100.0).let { if (item.costCents % 100L == 0L) (item.costCents / 100L).toString() else "%.2f".format(it) })
+    }
+    var sku by remember { mutableStateOf(item.sku) }
+    var barcode by remember { mutableStateOf(item.barcode) }
+    var trackStock by remember { mutableStateOf(item.trackStock) }
+    var stockText by remember { mutableStateOf(formatQty(item.stock)) }
+    var selectedBranches by remember {
+        mutableStateOf(
+            if (item.branchIds.isEmpty()) emptySet() else item.branchIds.split(",").filter { it.isNotEmpty() }.toSet()
+        )
+    }
+    var pickedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var removeExistingPhoto by remember { mutableStateOf(false) }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            pickedPhotoUri = uri
+            removeExistingPhoto = false
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (isNew) "New Item" else "Edit Item", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (!isNew) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete item", tint = LoyError)
+                    }
+                }
+            }
+
+            // Photo picker row (zero storage permission via Android Photo Picker)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val model: Any? = when {
+                        pickedPhotoUri != null -> pickedPhotoUri
+                        !removeExistingPhoto && item.hasPhoto && File(item.imagePath).exists() -> File(item.imagePath)
+                        else -> null
+                    }
+                    if (model != null) {
+                        AsyncImage(
+                            model = model,
+                            contentDescription = "Item photo",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, tint = LoyTextSecondary)
+                    }
+                }
+                OutlinedButton(
+                    onClick = {
+                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text("Choose photo")
+                }
+                if (pickedPhotoUri != null || (!removeExistingPhoto && item.hasPhoto)) {
+                    TextButton(onClick = {
+                        pickedPhotoUri = null
+                        removeExistingPhoto = true
+                    }) {
+                        Text("Remove", color = LoyError)
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Item name *") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("item_name_input"),
+            )
+
+            ExposedDropdownMenuBox(
+                expanded = catExpanded,
+                onExpandedChange = { catExpanded = !catExpanded },
+            ) {
+                val catName = data.categories.firstOrNull { it.id == categoryId }?.name ?: "Uncategorized"
+                OutlinedTextField(
+                    value = catName,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Category") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(expanded = catExpanded, onDismissRequest = { catExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Uncategorized") },
+                        onClick = { categoryId = null; catExpanded = false },
+                    )
+                    data.categories.forEach { cat ->
+                        DropdownMenuItem(
+                            text = { Text(cat.name) },
+                            onClick = { categoryId = cat.id; catExpanded = false },
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { priceText = it },
+                    label = { Text("Price (${data.settings.currencySymbol})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f).testTag("item_price_input"),
+                )
+                OutlinedTextField(
+                    value = costText,
+                    onValueChange = { costText = it },
+                    label = { Text("Cost (${data.settings.currencySymbol})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = sku,
+                    onValueChange = { sku = it },
+                    label = { Text("SKU") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = barcode,
+                    onValueChange = { barcode = it },
+                    label = { Text("Barcode") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Track stock", style = MaterialTheme.typography.titleMedium)
+                Switch(checked = trackStock, onCheckedChange = { trackStock = it })
+            }
+
+            if (trackStock) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    IconButton(
+                        onClick = {
+                            val cur = parseQty(stockText) ?: 0.0
+                            stockText = formatQty((cur - 1.0).coerceAtLeast(0.0))
+                        },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Outlined.Remove, contentDescription = "Decrease stock")
+                    }
+                    OutlinedTextField(
+                        value = stockText,
+                        onValueChange = { stockText = it },
+                        label = { Text("Stock count") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = {
+                            val cur = parseQty(stockText) ?: 0.0
+                            stockText = formatQty(cur + 1.0)
+                        },
+                        modifier = Modifier.size(48.dp),
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = "Increase stock")
+                    }
+                }
+            }
+
+            if (data.branches.size > 1) {
+                Text("Available branches (none selected = all)", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    data.branches.forEach { branch ->
+                        val sel = branch.id in selectedBranches
+                        FilterChip(
+                            selected = sel,
+                            onClick = {
+                                selectedBranches = if (sel) selectedBranches - branch.id else selectedBranches + branch.id
+                            },
+                            label = { Text(branch.name) },
+                        )
+                    }
+                }
+            }
+
+            Button(
+                onClick = {
+                    val cleanName = name.trim()
+                    if (cleanName.isEmpty()) return@Button
+                    val updated = item.copy(
+                        categoryId = categoryId,
+                        name = cleanName,
+                        priceCents = parseAmountToCents(priceText) ?: 0L,
+                        costCents = parseAmountToCents(costText) ?: 0L,
+                        sku = sku.trim(),
+                        barcode = barcode.trim(),
+                        trackStock = trackStock,
+                        stock = parseQty(stockText) ?: 0.0,
+                        branchIds = selectedBranches.joinToString(","),
+                    )
+                    onSave(updated, pickedPhotoUri, removeExistingPhoto)
+                },
+                enabled = name.trim().isNotEmpty(),
+                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("item_save_button"),
+            ) {
+                Text("Save item")
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun CategoryEditorDialog(
+    category: CategoryEntity,
+    isNew: Boolean,
+    onSave: (String) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(category.name) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isNew) "New Category" else "Edit Category") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Category name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.trim().isNotEmpty()) onSave(name.trim()) },
+                enabled = name.trim().isNotEmpty(),
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            Row {
+                if (!isNew) {
+                    TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("Delete", color = LoyError)
+                    }
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Cancel")
+                }
+            }
+        },
+    )
+}

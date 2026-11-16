@@ -1,0 +1,8 @@
+{
+  "name": "LoyPOS",
+  "description": "Offline-first retail Point-of-Sale and inventory management app with multi-branch sales, shifts, receipts, and back office reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
