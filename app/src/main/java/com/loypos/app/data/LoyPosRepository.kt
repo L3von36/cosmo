@@ -5,6 +5,9 @@ import androidx.room.withTransaction
 import com.loypos.app.core.AuthCrypto
 import com.loypos.app.core.DemoCatalog
 import com.loypos.app.core.DiscountInput
+import com.loypos.app.core.SalesCsvExporter
+import com.loypos.app.core.SalesCsvReportResult
+import com.loypos.app.core.SalesReportPeriod
 import com.loypos.app.core.computeTotals
 import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
@@ -35,6 +38,7 @@ import com.loypos.app.data.local.UserEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,6 +71,8 @@ class LoyPosRepository(private val context: Context) {
             taxIncluded = map["tax_included"] == "true",
             receiptFooter = map["receipt_footer"] ?: "Thank you for shopping with us!",
             nextReceiptNumber = map["next_receipt_number"]?.toIntOrNull() ?: 1,
+            lowStockAlertsEnabled = map["low_stock_alerts_enabled"] == "true",
+            lowStockThreshold = (map["low_stock_threshold"]?.toDoubleOrNull() ?: 3.0).coerceAtLeast(0.0),
         )
     }
 
@@ -91,6 +97,32 @@ class LoyPosRepository(private val context: Context) {
 
     fun observeCompletedSalesSince(sinceMs: Long): Flow<List<SaleEntity>> =
         saleDao.observeCompletedSalesSince(sinceMs)
+
+    suspend fun buildSalesCsvReport(
+        period: SalesReportPeriod,
+        year: Int,
+        monthZeroBased: Int,
+        dayOfMonth: Int,
+        branchFilterId: String?,
+    ): SalesCsvReportResult = withContext(Dispatchers.IO) {
+        val (startMs, endMs) = when (period) {
+            SalesReportPeriod.DAILY -> SalesCsvExporter.dateRangeForDaily(year, monthZeroBased, dayOfMonth)
+            SalesReportPeriod.MONTHLY -> SalesCsvExporter.dateRangeForMonthly(year, monthZeroBased)
+        }
+        val sales = saleDao.getSalesWithItemsInRange(startMs, endMs)
+        val branches = dao.getAllBranches()
+        val settings = settingsFlow.first()
+        SalesCsvExporter.buildCsvReport(
+            period = period,
+            year = year,
+            monthZeroBased = monthZeroBased,
+            dayOfMonth = dayOfMonth,
+            sales = sales,
+            branches = branches,
+            settings = settings,
+            branchFilterId = branchFilterId,
+        )
+    }
 
     fun computeDailyRevenueTrend(
         sales: List<SaleEntity>,
@@ -153,6 +185,15 @@ class LoyPosRepository(private val context: Context) {
         if (receiptFooter != null) saveSetting("receipt_footer", receiptFooter)
         saveSetting("cloud_settings_ts", now.toString())
     }
+
+    suspend fun saveLowStockAlertSettings(enabled: Boolean, threshold: Double) {
+        val cleanThreshold = threshold.coerceAtLeast(0.0)
+        saveSetting("low_stock_alerts_enabled", enabled.toString())
+        saveSetting("low_stock_threshold", cleanThreshold.toString())
+    }
+
+    suspend fun getLowStockProducts(threshold: Double): List<ItemEntity> =
+        productDao.getLowStockProducts(threshold.coerceAtLeast(0.0))
 
     // --- Auth ---
     suspend fun currentSessionUser(): UserEntity? {

@@ -27,6 +27,9 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
     suspend fun getProductById(id: String): ProductEntity?
 
+    @Query("SELECT * FROM products WHERE archived = 0 AND track_stock = 1 AND stock < :threshold ORDER BY stock ASC, name ASC")
+    suspend fun getLowStockProducts(threshold: Double): List<ProductEntity>
+
     // Create / Upsert
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProduct(product: ProductEntity)
@@ -113,6 +116,10 @@ interface SaleDao {
     @Transaction
     @Query("SELECT * FROM sales WHERE id = :saleId LIMIT 1")
     suspend fun getSaleWithItems(saleId: String): SaleWithItems?
+
+    @Transaction
+    @Query("SELECT * FROM sales WHERE created_at >= :startMs AND created_at < :endMs ORDER BY created_at ASC")
+    suspend fun getSalesWithItemsInRange(startMs: Long, endMs: Long): List<SaleWithItems>
 
     @Query("SELECT * FROM sales ORDER BY created_at DESC")
     suspend fun getAllSales(): List<SaleEntity>

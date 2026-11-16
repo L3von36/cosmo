@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.loypos.app.core.DiscountInput
+import com.loypos.app.core.LowStockWorkScheduler
 import com.loypos.app.core.SaleTotals
 import com.loypos.app.core.computeTotals
 import com.loypos.app.core.newId
@@ -278,6 +279,9 @@ class TransactionViewModel(application: Application) : AndroidViewModel(applicat
 
             _lastCompletedSale.value = completedSale
             clearCart()
+            if (settings.lowStockAlertsEnabled) {
+                LowStockWorkScheduler.runImmediateCheck(getApplication())
+            }
             onCompleted(completedSale)
         }
     }

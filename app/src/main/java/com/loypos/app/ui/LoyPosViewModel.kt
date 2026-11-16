@@ -10,9 +10,14 @@ import com.loypos.app.core.CloudSyncClient
 import com.loypos.app.core.DiscountInput
 import com.loypos.app.core.ItemPhotos
 import com.loypos.app.core.LocalBackup
+import com.loypos.app.core.LowStockWorkScheduler
 import com.loypos.app.core.ReceiptPdfGenerator
 import com.loypos.app.core.SaleTotals
+import com.loypos.app.core.SalesCsvExporter
+import com.loypos.app.core.SalesCsvReportResult
+import com.loypos.app.core.SalesReportPeriod
 import com.loypos.app.core.computeTotals
+import com.loypos.app.core.formatQty
 import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
 import com.loypos.app.core.startOfTodayMs
@@ -33,6 +38,7 @@ import com.loypos.app.data.local.ShiftStats
 import com.loypos.app.data.local.StockMovementEntity
 import com.loypos.app.data.local.TicketWithLines
 import com.loypos.app.data.local.UserEntity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,6 +51,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 enum class AuthStage { SPLASH, LOGGED_OUT, LOGGED_IN }
@@ -207,6 +214,9 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
             refreshHealthAndBackups()
+            if (raw["low_stock_alerts_enabled"] == "true") {
+                LowStockWorkScheduler.schedulePeriodicCheck(appContext)
+            }
         }
     }
 
@@ -665,6 +675,37 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateLowStockAlertSettings(enabled: Boolean, threshold: Double) {
+        val cleanThreshold = threshold.coerceAtLeast(0.0)
+        viewModelScope.launch {
+            repo.saveLowStockAlertSettings(enabled, cleanThreshold)
+            if (enabled) {
+                LowStockWorkScheduler.schedulePeriodicCheck(appContext)
+                LowStockWorkScheduler.runImmediateCheck(appContext)
+                showMessage("Low-stock alerts enabled (< ${formatQty(cleanThreshold)})")
+            } else {
+                LowStockWorkScheduler.cancelPeriodicCheck(appContext)
+                showMessage("Low-stock alerts disabled")
+            }
+        }
+    }
+
+    fun runLowStockCheckNow() {
+        viewModelScope.launch {
+            val settings = dataState.value.settings
+            val lowItems = repo.getLowStockProducts(settings.lowStockThreshold)
+            if (settings.lowStockAlertsEnabled) {
+                LowStockWorkScheduler.runImmediateCheck(appContext)
+            }
+            if (lowItems.isEmpty()) {
+                showMessage("All tracked items are at or above ${formatQty(settings.lowStockThreshold)}")
+            } else {
+                val msg = "${lowItems.size} ${if (lowItems.size == 1) "item" else "items"} below ${formatQty(settings.lowStockThreshold)}"
+                showMessage(msg)
+            }
+        }
+    }
+
     // --- Export / Import / Health / Reset / Cloud Sync ---
     fun refreshHealthAndBackups() {
         viewModelScope.launch {
@@ -681,6 +722,64 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 showMessage("Export ready")
             }.onFailure {
                 showMessage("Export failed: ${it.message}")
+            }
+        }
+    }
+
+    fun loadSalesCsvPreview(
+        period: SalesReportPeriod,
+        year: Int,
+        monthZeroBased: Int,
+        dayOfMonth: Int,
+        branchFilterId: String?,
+        onResult: (SalesCsvReportResult?) -> Unit,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                repo.buildSalesCsvReport(period, year, monthZeroBased, dayOfMonth, branchFilterId)
+            }.onSuccess { onResult(it) }
+                .onFailure {
+                    showMessage("Could not load sales report: ${it.message}")
+                    onResult(null)
+                }
+        }
+    }
+
+    fun shareSalesCsvReport(
+        period: SalesReportPeriod,
+        year: Int,
+        monthZeroBased: Int,
+        dayOfMonth: Int,
+        branchFilterId: String?,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                val report = repo.buildSalesCsvReport(period, year, monthZeroBased, dayOfMonth, branchFilterId)
+                withContext(Dispatchers.Main) {
+                    SalesCsvExporter.writeTempCsvAndShare(appContext, report)
+                }
+                showMessage("CSV ready: ${report.filename}")
+            }.onFailure {
+                showMessage("CSV export failed: ${it.message}")
+            }
+        }
+    }
+
+    fun writeSalesCsvToUri(
+        uri: Uri,
+        report: SalesCsvReportResult,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(report.csvContent.toByteArray(Charsets.UTF_8))
+                        stream.flush()
+                    } ?: throw IllegalStateException("Could not open destination file")
+                }
+                showMessage("Saved ${report.filename}")
+            }.onFailure {
+                showMessage("Could not save CSV: ${it.message}")
             }
         }
     }

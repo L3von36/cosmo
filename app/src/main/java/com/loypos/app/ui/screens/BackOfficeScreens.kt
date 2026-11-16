@@ -22,18 +22,29 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.PeopleOutline
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.TableView
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,6 +52,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -48,10 +60,13 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +82,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.loypos.app.core.SalesCsvReportResult
+import com.loypos.app.core.SalesReportPeriod
 import com.loypos.app.core.formatCents
 import com.loypos.app.core.formatDateTime
 import com.loypos.app.core.formatQty
@@ -74,6 +91,7 @@ import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
 import com.loypos.app.core.parseQty
 import com.loypos.app.core.startOfTodayMs
+import com.loypos.app.data.local.BranchEntity
 import com.loypos.app.data.local.CategoryReportRow
 import com.loypos.app.data.local.CustomerEntity
 import com.loypos.app.data.local.DailySalesPoint
@@ -102,6 +120,7 @@ import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.LoyWarning
 import com.loypos.app.ui.theme.TabularMoneyStyle
 import java.util.Calendar
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -586,6 +605,8 @@ fun ReportsScreen(
         }
     }
 
+    var showCsvExportSheet by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -593,6 +614,16 @@ fun ReportsScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(
+                        onClick = { showCsvExportSheet = true },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("reports_top_export_csv_button"),
+                    ) {
+                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp), tint = LoyGreen)
+                        Spacer(Modifier.width(4.dp))
+                        Text("CSV", color = LoyGreen, fontWeight = FontWeight.SemiBold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
@@ -632,6 +663,44 @@ fun ReportsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatBlock("Receipts / Refunds", "${completed.size} / ${refunded.size}", LoyTextPrimary, Modifier.weight(1f))
                         StatBlock("Avg ticket", formatCents(avgTicketCents, sym), LoyTextPrimary, Modifier.weight(1f))
+                    }
+                }
+            }
+
+            // Back-office accounting CSV export card
+            GroupCard(modifier = Modifier.testTag("reports_export_csv_card")) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(LoyGreenLight),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.TableView,
+                            contentDescription = "Accounting CSV export",
+                            tint = LoyGreen,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Accounting Export (CSV)", fontWeight = FontWeight.SemiBold, color = LoyTextPrimary)
+                        Text(
+                            "Export daily or monthly sales summaries and receipt ledgers from Room.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                    }
+                    Button(
+                        onClick = { showCsvExportSheet = true },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("reports_export_csv_button"),
+                    ) {
+                        Text("Export")
                     }
                 }
             }
@@ -737,6 +806,308 @@ fun ReportsScreen(
                     }
                 }
             }
+        }
+    }
+
+    if (showCsvExportSheet) {
+        SalesCsvExportSheet(
+            viewModel = viewModel,
+            branches = data.branches,
+            currencySymbol = sym,
+            onDismiss = { showCsvExportSheet = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SalesCsvExportSheet(
+    viewModel: LoyPosViewModel,
+    branches: List<BranchEntity>,
+    currencySymbol: String,
+    onDismiss: () -> Unit,
+) {
+    val todayCal = remember { Calendar.getInstance() }
+    var period by remember { mutableStateOf(SalesReportPeriod.DAILY) }
+    var selectedYear by remember { mutableIntStateOf(todayCal.get(Calendar.YEAR)) }
+    var selectedMonth by remember { mutableIntStateOf(todayCal.get(Calendar.MONTH)) }
+    var selectedDay by remember { mutableIntStateOf(todayCal.get(Calendar.DAY_OF_MONTH)) }
+    var branchFilterId by remember { mutableStateOf<String?>(null) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var previewReport by remember { mutableStateOf<SalesCsvReportResult?>(null) }
+
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv"),
+    ) { uri ->
+        val report = previewReport
+        if (uri != null && report != null) {
+            viewModel.writeSalesCsvToUri(uri, report)
+            onDismiss()
+        }
+    }
+
+    LaunchedEffect(period, selectedYear, selectedMonth, selectedDay, branchFilterId) {
+        viewModel.loadSalesCsvPreview(
+            period = period,
+            year = selectedYear,
+            monthZeroBased = selectedMonth,
+            dayOfMonth = selectedDay,
+            branchFilterId = branchFilterId,
+        ) { result ->
+            previewReport = result
+        }
+    }
+
+    val monthNames = remember {
+        arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    }
+    val dateDisplayLabel = if (period == SalesReportPeriod.DAILY) {
+        "${monthNames[selectedMonth]} $selectedDay, $selectedYear"
+    } else {
+        "${monthNames[selectedMonth]} $selectedYear"
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "Export Accounting Report (CSV)",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = period == SalesReportPeriod.DAILY,
+                    onClick = { period = SalesReportPeriod.DAILY },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    modifier = Modifier.testTag("csv_period_daily"),
+                ) {
+                    Text("Daily Report")
+                }
+                SegmentedButton(
+                    selected = period == SalesReportPeriod.MONTHLY,
+                    onClick = { period = SalesReportPeriod.MONTHLY },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    modifier = Modifier.testTag("csv_period_monthly"),
+                ) {
+                    Text("Monthly Report")
+                }
+            }
+
+            // Date or Month stepper + calendar picker
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = LoySurface,
+                border = BorderStroke(1.dp, LoyBorder),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    IconButton(
+                        onClick = {
+                            val cal = Calendar.getInstance().apply {
+                                set(selectedYear, selectedMonth, selectedDay)
+                                if (period == SalesReportPeriod.DAILY) {
+                                    add(Calendar.DAY_OF_MONTH, -1)
+                                } else {
+                                    set(Calendar.DAY_OF_MONTH, 1)
+                                    add(Calendar.MONTH, -1)
+                                }
+                            }
+                            selectedYear = cal.get(Calendar.YEAR)
+                            selectedMonth = cal.get(Calendar.MONTH)
+                            selectedDay = cal.get(Calendar.DAY_OF_MONTH)
+                        },
+                        modifier = Modifier.size(48.dp).testTag("csv_period_prev"),
+                    ) {
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, contentDescription = "Previous period")
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = period == SalesReportPeriod.DAILY) { showDatePicker = true }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag("csv_period_label"),
+                    ) {
+                        Icon(
+                            Icons.Outlined.CalendarToday,
+                            contentDescription = "Select date",
+                            tint = LoyGreen,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(dateDisplayLabel, fontWeight = FontWeight.SemiBold, color = LoyTextPrimary)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            val cal = Calendar.getInstance().apply {
+                                set(selectedYear, selectedMonth, selectedDay)
+                                if (period == SalesReportPeriod.DAILY) {
+                                    add(Calendar.DAY_OF_MONTH, 1)
+                                } else {
+                                    set(Calendar.DAY_OF_MONTH, 1)
+                                    add(Calendar.MONTH, 1)
+                                }
+                            }
+                            selectedYear = cal.get(Calendar.YEAR)
+                            selectedMonth = cal.get(Calendar.MONTH)
+                            selectedDay = cal.get(Calendar.DAY_OF_MONTH)
+                        },
+                        modifier = Modifier.size(48.dp).testTag("csv_period_next"),
+                    ) {
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = "Next period")
+                    }
+                }
+            }
+
+            if (branches.size > 1) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = branchFilterId == null,
+                        onClick = { branchFilterId = null },
+                        label = { Text("All branches") },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = LoyGreenLight,
+                            selectedLabelColor = LoyGreen,
+                        ),
+                    )
+                    branches.take(2).forEach { branch ->
+                        FilterChip(
+                            selected = branchFilterId == branch.id,
+                            onClick = { branchFilterId = branch.id },
+                            label = { Text(branch.name) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = LoyGreenLight,
+                                selectedLabelColor = LoyGreen,
+                            ),
+                        )
+                    }
+                }
+            }
+
+            // Live Room preview of selected daily/monthly window
+            val preview = previewReport
+            GroupCard {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatBlock(
+                            label = "Net Revenue",
+                            value = formatCents(preview?.netTotalCents ?: 0L, currencySymbol),
+                            valueColor = LoyGreen,
+                            modifier = Modifier.weight(1f),
+                        )
+                        StatBlock(
+                            label = "Sales / Refunds",
+                            value = "${preview?.completedCount ?: 0} / ${preview?.refundedCount ?: 0}",
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Text(
+                        text = if (preview != null) {
+                            "File: ${preview.filename} · Includes summary${if (period == SalesReportPeriod.MONTHLY) ", daily breakdown," else ""} and transaction ledger."
+                        } else {
+                            "Loading Room sales data..."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val fileName = preview?.filename ?: "loypos-sales-report.csv"
+                        createCsvLauncher.launch(fileName)
+                    },
+                    enabled = preview != null,
+                    modifier = Modifier.weight(1f).height(50.dp).testTag("csv_save_button"),
+                ) {
+                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save CSV")
+                }
+                Button(
+                    onClick = {
+                        viewModel.shareSalesCsvReport(
+                            period = period,
+                            year = selectedYear,
+                            monthZeroBased = selectedMonth,
+                            dayOfMonth = selectedDay,
+                            branchFilterId = branchFilterId,
+                        )
+                        onDismiss()
+                    },
+                    enabled = preview != null,
+                    modifier = Modifier.weight(1f).height(50.dp).testTag("csv_share_button"),
+                ) {
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Share CSV")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    if (showDatePicker) {
+        val initialUtcMillis = remember(selectedYear, selectedMonth, selectedDay) {
+            Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                set(selectedYear, selectedMonth, selectedDay, 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        }
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialUtcMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                                timeInMillis = millis
+                            }
+                            selectedYear = utc.get(Calendar.YEAR)
+                            selectedMonth = utc.get(Calendar.MONTH)
+                            selectedDay = utc.get(Calendar.DAY_OF_MONTH)
+                        }
+                        showDatePicker = false
+                    }
+                ) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text("Cancel")
+                }
+            },
+        ) {
+            DatePicker(state = datePickerState)
         }
     }
 }

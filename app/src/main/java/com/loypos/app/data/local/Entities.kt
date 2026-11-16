@@ -326,6 +326,8 @@ data class SettingsModel(
     val taxIncluded: Boolean = false,
     val receiptFooter: String = "Thank you for shopping with us!",
     val nextReceiptNumber: Int = 1,
+    val lowStockAlertsEnabled: Boolean = false,
+    val lowStockThreshold: Double = 3.0,
 )
 
 data class ShiftStats(

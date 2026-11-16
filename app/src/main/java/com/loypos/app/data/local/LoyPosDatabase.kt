@@ -76,6 +76,8 @@ abstract class LoyPosDatabase : RoomDatabase() {
                     SettingEntity("tax_included", defaults.taxIncluded.toString()),
                     SettingEntity("receipt_footer", defaults.receiptFooter),
                     SettingEntity("next_receipt_number", defaults.nextReceiptNumber.toString()),
+                    SettingEntity("low_stock_alerts_enabled", defaults.lowStockAlertsEnabled.toString()),
+                    SettingEntity("low_stock_threshold", defaults.lowStockThreshold.toString()),
                     SettingEntity("active_branch", "branch-main"),
                 )
             )

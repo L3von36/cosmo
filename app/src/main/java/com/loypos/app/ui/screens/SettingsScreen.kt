@@ -1,5 +1,8 @@
 package com.loypos.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,11 +36,13 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PeopleOutline
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,14 +72,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.loypos.app.core.LocalBackup
 import com.loypos.app.core.formatBytes
+import com.loypos.app.core.formatQty
 import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
+import com.loypos.app.core.parseQty
 import com.loypos.app.data.local.BranchEntity
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
@@ -167,14 +176,26 @@ fun SettingsScreen(
     onNavigateToReports: () -> Unit,
     onNavigateToShift: () -> Unit,
 ) {
+    val context = LocalContext.current
     val user = session.currentUser
     var showStoreDialog by remember { mutableStateOf(false) }
     var showTaxDialog by remember { mutableStateOf(false) }
+    var showThresholdDialog by remember { mutableStateOf(false) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
     var editingBranch by remember { mutableStateOf<BranchEntity?>(null) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var pendingRestoreBackup by remember { mutableStateOf<LocalBackup?>(null) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            viewModel.updateLowStockAlertSettings(true, data.settings.lowStockThreshold)
+        } else {
+            viewModel.showMessage("Notification permission is required for low-stock alerts")
+        }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importFromUri(uri)
@@ -235,7 +256,7 @@ fun SettingsScreen(
                     SettingsNavRow(
                         icon = Icons.Outlined.Inventory2,
                         title = "Inventory & Stock",
-                        subtitle = "${data.items.count { it.trackStock && it.stock <= 3.0 }} low or out of stock",
+                        subtitle = "${data.items.count { it.trackStock && it.stock < data.settings.lowStockThreshold }} below threshold (< ${formatQty(data.settings.lowStockThreshold)})",
                         onClick = onNavigateToStock,
                         modifier = Modifier.testTag("nav_backoffice_stock"),
                     )
@@ -372,6 +393,81 @@ fun SettingsScreen(
                 }
             }
 
+            // Low-Stock Periodic Alerts
+            item {
+                SectionHeader("Inventory Alerts")
+                GroupCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = LoyGreen)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Periodic low-stock alerts", fontWeight = FontWeight.Medium)
+                            Text(
+                                text = if (data.settings.lowStockAlertsEnabled) {
+                                    "Checks every 15 min for items < ${formatQty(data.settings.lowStockThreshold)}"
+                                } else {
+                                    "Background notifications turned off"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LoyTextSecondary,
+                            )
+                        }
+                        Switch(
+                            checked = data.settings.lowStockAlertsEnabled,
+                            onCheckedChange = { enable ->
+                                if (!enable) {
+                                    viewModel.updateLowStockAlertSettings(false, data.settings.lowStockThreshold)
+                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    viewModel.updateLowStockAlertSettings(true, data.settings.lowStockThreshold)
+                                }
+                            },
+                            modifier = Modifier.testTag("settings_low_stock_switch"),
+                        )
+                    }
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Tune,
+                        title = "Low-stock threshold",
+                        subtitle = "Notify when tracked quantity is below ${formatQty(data.settings.lowStockThreshold)}",
+                        onClick = { showThresholdDialog = true },
+                        modifier = Modifier.testTag("settings_low_stock_threshold_button"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                                    data.settings.lowStockAlertsEnabled
+                                ) {
+                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    viewModel.runLowStockCheckNow()
+                                }
+                            }
+                            .padding(14.dp)
+                            .testTag("settings_low_stock_check_now"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = LoyGreen)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Check low stock now", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
             // Data Export & Import
             item {
                 SectionHeader("Data & Safety Backups")
@@ -502,6 +598,17 @@ fun SettingsScreen(
                 showTaxDialog = false
             },
             onDismiss = { showTaxDialog = false },
+        )
+    }
+
+    if (showThresholdDialog) {
+        LowStockThresholdDialog(
+            initialThreshold = data.settings.lowStockThreshold,
+            onSave = { threshold ->
+                viewModel.updateLowStockAlertSettings(data.settings.lowStockAlertsEnabled, threshold)
+                showThresholdDialog = false
+            },
+            onDismiss = { showThresholdDialog = false },
         )
     }
 
@@ -776,6 +883,51 @@ private fun BranchEditorDialog(
                 }
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
             }
+        },
+    )
+}
+
+@Composable
+private fun LowStockThresholdDialog(
+    initialThreshold: Double,
+    onSave: (Double) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var thresholdText by remember { mutableStateOf(formatQty(initialThreshold)) }
+    val parsed = parseQty(thresholdText)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Low-Stock Threshold") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Send a periodic notification whenever a tracked product falls below this quantity.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LoyTextSecondary,
+                )
+                OutlinedTextField(
+                    value = thresholdText,
+                    onValueChange = { thresholdText = it },
+                    label = { Text("Minimum quantity") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("low_stock_threshold_input"),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val value = parsed ?: 3.0
+                    onSave(value)
+                },
+                enabled = parsed != null,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("low_stock_threshold_save"),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
         },
     )
 }
