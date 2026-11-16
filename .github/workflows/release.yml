@@ -43,22 +43,57 @@ jobs:
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -name "sdkmanager" 2>/dev/null | sort -V | tail -n 1)
+          SDKMANAGER=""
+          if [ -d "$SDK_ROOT/cmdline-tools" ]; then
+            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -type f -name "sdkmanager" 2>/dev/null | sort -V | tail -n 1 || true)
+          fi
           if [ -z "$SDKMANAGER" ]; then
             SDKMANAGER=$(command -v sdkmanager || true)
           fi
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager not found under $SDK_ROOT"
-            exit 1
+
+          if [ -n "$SDKMANAGER" ]; then
+            set +o pipefail
+            { yes || true; } | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+            set -o pipefail
           fi
 
-          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          if [ -d "$SDK_ROOT/platforms/android-36" ] && [ -d "$SDK_ROOT/build-tools/36.0.0" ]; then
+            echo "Preinstalled Android SDK API 36 and Build Tools 36.0.0 found at $SDK_ROOT"
+          else
+            if [ -z "$SDKMANAGER" ]; then
+              echo "sdkmanager not found and API 36 SDK packages are missing under $SDK_ROOT"
+              exit 1
+            fi
+            set +o pipefail
+            { yes || true; } | "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+            set -o pipefail
+          fi
 
-      - name: Set up Gradle 9.3.1
-        uses: gradle/actions/setup-gradle@v6
+      - name: Cache Gradle 9.3.1 & dependencies
+        uses: actions/cache@v4
         with:
-          gradle-version: '9.3.1'
+          path: |
+            ~/.gradle-dist/gradle-9.3.1
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-9.3.1-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml', 'gradle.properties') }}
+          restore-keys: |
+            gradle-9.3.1-${{ runner.os }}-
+
+      - name: Install Gradle 9.3.1
+        shell: bash
+        run: |
+          GRADLE_DIR="$HOME/.gradle-dist/gradle-9.3.1"
+          if [ ! -x "$GRADLE_DIR/bin/gradle" ]; then
+            mkdir -p "$HOME/.gradle-dist"
+            curl -fsSL --retry 3 --retry-delay 2 \
+              "https://services.gradle.org/distributions/gradle-9.3.1-bin.zip" \
+              -o /tmp/gradle-9.3.1-bin.zip
+            unzip -q /tmp/gradle-9.3.1-bin.zip -d "$HOME/.gradle-dist"
+            rm -f /tmp/gradle-9.3.1-bin.zip
+          fi
+          echo "$GRADLE_DIR/bin" >> "$GITHUB_PATH"
+          "$GRADLE_DIR/bin/gradle" --version
 
       - name: Prepare signing keystore
         shell: bash
@@ -69,6 +104,7 @@ jobs:
           fi
 
       - name: Build Debug & Release APKs
+        shell: bash
         run: gradle assembleDebug assembleRelease --no-daemon
 
       - name: Sign Release APK with custom keystore (if configured)
@@ -81,7 +117,7 @@ jobs:
         run: |
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
-            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" | sort -V | tail -n 1)
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name "apksigner" | sort -V | tail -n 1)
             APK_IN=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
             "$APKSIGNER" sign \
               --ks release.keystore \
@@ -138,7 +174,10 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: LoyPOS ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
           files: |
             release-apks/loypos-release.apk
             release-apks/loypos-debug.apk
