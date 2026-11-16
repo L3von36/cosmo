@@ -32,11 +32,31 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK (API 36)
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK_ROOT" ]; then
+            echo "Android SDK directory not found at $SDK_ROOT"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -name "sdkmanager" 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER=$(command -v sdkmanager || true)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $SDK_ROOT"
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       - name: Set up Gradle 9.3.1
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.3.1'
 
@@ -85,6 +105,10 @@ jobs:
           else
             RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
           fi
+          if [ -z "$DEBUG_APK" ] || [ -z "$RELEASE_APK" ]; then
+            echo "APK build output missing (debug='$DEBUG_APK', release='$RELEASE_APK')"
+            exit 1
+          fi
           cp "$DEBUG_APK" release-apks/loypos-debug.apk
           cp "$RELEASE_APK" release-apks/loypos-release.apk
           ls -lh release-apks/
@@ -97,7 +121,6 @@ jobs:
           retention-days: 30
 
       - name: Resolve release tag
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         id: version
         shell: bash
         run: |
@@ -111,7 +134,6 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
