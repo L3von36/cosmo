@@ -15,12 +15,14 @@ import com.loypos.app.data.local.CartLine
 import com.loypos.app.data.local.CashMovementEntity
 import com.loypos.app.data.local.CategoryEntity
 import com.loypos.app.data.local.CustomerEntity
+import com.loypos.app.data.local.DailyRevenuePoint
 import com.loypos.app.data.local.DbStats
 import com.loypos.app.data.local.ItemEntity
 import com.loypos.app.data.local.LoyPosDatabase
 import com.loypos.app.data.local.ReceiptEntity
 import com.loypos.app.data.local.ReceiptLineEntity
 import com.loypos.app.data.local.ReceiptWithLines
+import com.loypos.app.data.local.SaleEntity
 import com.loypos.app.data.local.SettingEntity
 import com.loypos.app.data.local.SettingsModel
 import com.loypos.app.data.local.ShiftEntity
@@ -38,6 +40,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Calendar
 
 class LoyPosRepository(private val context: Context) {
     private val db = LoyPosDatabase.getInstance(context)
@@ -45,6 +48,7 @@ class LoyPosRepository(private val context: Context) {
     val productDao = db.productDao()
     val categoryDao = db.categoryDao()
     val saleDao = db.saleDao()
+    val saleItemDao = db.saleItemDao()
     private val seedMutex = Mutex()
 
     suspend fun ensureInitialized() = seedMutex.withLock {
@@ -72,6 +76,11 @@ class LoyPosRepository(private val context: Context) {
     val branchesFlow: Flow<List<BranchEntity>> = dao.observeActiveBranches()
     val categoriesFlow: Flow<List<CategoryEntity>> = categoryDao.observeCategories()
     val itemsFlow: Flow<List<ItemEntity>> = productDao.observeProducts()
+
+    fun observeProductsFiltered(query: String): Flow<List<ItemEntity>> {
+        val trimmed = query.trim()
+        return if (trimmed.isEmpty()) productDao.observeProducts() else productDao.searchProducts(trimmed)
+    }
     val customersFlow: Flow<List<CustomerEntity>> = dao.observeCustomers()
     val staffFlow: Flow<List<UserEntity>> = dao.observeStaff()
     val stockMovementsFlow: Flow<List<StockMovementEntity>> = dao.observeRecentStockMovements()
@@ -79,6 +88,41 @@ class LoyPosRepository(private val context: Context) {
     val cashMovementsFlow: Flow<List<CashMovementEntity>> = dao.observeCashMovements()
 
     val receiptsWithLinesFlow: Flow<List<ReceiptWithLines>> = saleDao.observeSalesWithItems()
+
+    fun observeCompletedSalesSince(sinceMs: Long): Flow<List<SaleEntity>> =
+        saleDao.observeCompletedSalesSince(sinceMs)
+
+    fun computeDailyRevenueTrend(
+        sales: List<SaleEntity>,
+        days: Int,
+        branchId: String?,
+    ): List<DailyRevenuePoint> {
+        val clampedDays = days.coerceIn(1, 90)
+        val todayStart = startOfTodayMs()
+        val cal = Calendar.getInstance()
+        val dayLabels = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+        val monthNames = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        val filtered = sales.filter { sale ->
+            sale.isCompleted && (branchId == null || sale.branchId == null || sale.branchId == branchId)
+        }
+        return ((clampedDays - 1) downTo 0).map { offset ->
+            val start = todayStart - offset * 86_400_000L
+            val end = start + 86_400_000L
+            cal.timeInMillis = start
+            val label = if (clampedDays <= 7) {
+                dayLabels[cal.get(Calendar.DAY_OF_WEEK) - 1]
+            } else {
+                "${monthNames[cal.get(Calendar.MONTH)]} ${cal.get(Calendar.DAY_OF_MONTH)}"
+            }
+            val daySales = filtered.filter { it.createdAt in start until end }
+            DailyRevenuePoint(
+                dayStartMs = start,
+                label = label,
+                totalCents = daySales.sumOf { it.totalCents },
+                salesCount = daySales.size,
+            )
+        }
+    }
 
     val ticketsWithLinesFlow: Flow<List<TicketWithLines>> =
         combine(dao.observeTickets(), dao.observeAllTicketLines()) { tickets, lines ->
@@ -449,11 +493,11 @@ class LoyPosRepository(private val context: Context) {
                     lineTotalCents = it.lineTotalCents,
                 )
             }
-            dao.upsertReceipt(receipt)
-            dao.insertReceiptLines(receiptLines)
+            saleDao.insertSale(receipt)
+            saleItemDao.insertSaleItems(receiptLines)
 
             for (l in lines) {
-                dao.addItemStock(l.itemId, -l.qty, now)
+                productDao.adjustProductStock(l.itemId, -l.qty, now)
                 dao.insertStockMovement(
                     StockMovementEntity(
                         id = newId(),
@@ -484,12 +528,13 @@ class LoyPosRepository(private val context: Context) {
     suspend fun refundReceipt(receiptId: String) {
         val now = nowMs()
         db.withTransaction {
-            val receipt = dao.getReceiptById(receiptId) ?: return@withTransaction
+            val saleWithItems = saleDao.getSaleWithItems(receiptId) ?: return@withTransaction
+            val receipt = saleWithItems.receipt
             if (!receipt.isCompleted) return@withTransaction
-            val lines = dao.getReceiptLines(receiptId)
-            dao.markReceiptRefunded(receiptId, now)
+            val lines = saleItemDao.getSaleItemsForSale(receiptId)
+            saleDao.markSaleRefunded(receiptId, now)
             for (l in lines) {
-                dao.addItemStock(l.itemId, l.qty, now)
+                productDao.adjustProductStock(l.itemId, l.qty, now)
                 dao.insertStockMovement(
                     StockMovementEntity(
                         id = newId(),
@@ -659,7 +704,7 @@ class LoyPosRepository(private val context: Context) {
             if (sanitizedItems.isNotEmpty()) productDao.upsertProducts(sanitizedItems)
             if (customers.isNotEmpty()) dao.upsertCustomers(customers)
             if (sanitizedReceipts.isNotEmpty()) dao.upsertReceipts(sanitizedReceipts)
-            if (receiptLines.isNotEmpty()) saleDao.insertSaleItems(receiptLines)
+            if (receiptLines.isNotEmpty()) saleItemDao.insertSaleItems(receiptLines)
             if (tickets.isNotEmpty()) dao.upsertTickets(tickets)
             if (ticketLines.isNotEmpty()) dao.insertTicketLines(ticketLines)
             if (movements.isNotEmpty()) dao.insertStockMovements(movements)

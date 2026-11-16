@@ -374,3 +374,12 @@ data class DailySalesPoint(
     val label: String,
     val totalCents: Long,
 )
+
+data class DailyRevenuePoint(
+    val dayStartMs: Long,
+    val label: String,
+    val totalCents: Long,
+    val salesCount: Int,
+) {
+    val revenueUnits: Double get() = totalCents / 100.0
+}

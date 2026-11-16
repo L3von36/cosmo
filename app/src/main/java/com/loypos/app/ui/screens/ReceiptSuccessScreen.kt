@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,11 +39,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.loypos.app.core.formatCents
 import com.loypos.app.core.formatDateTime
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
-import com.loypos.app.ui.UiSessionState
+import com.loypos.app.ui.TransactionViewModel
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyGreen
@@ -55,16 +57,17 @@ import com.loypos.app.ui.theme.TabularMoneyStyle
 @Composable
 fun ReceiptSuccessScreen(
     viewModel: LoyPosViewModel,
-    session: UiSessionState,
+    transactionViewModel: TransactionViewModel,
     data: LoyPosDataState,
     onDone: () -> Unit,
 ) {
-    val receiptWithLines = session.lastCompletedReceipt
-    if (receiptWithLines == null) {
+    val receiptWithLines by transactionViewModel.lastCompletedSale.collectAsStateWithLifecycle()
+    val currentReceipt = receiptWithLines
+    if (currentReceipt == null) {
         LaunchedEffect(Unit) { onDone() }
         return
     }
-    val r = receiptWithLines.receipt
+    val r = currentReceipt.receipt
     val sym = data.settings.currencySymbol
 
     Box(
@@ -153,7 +156,7 @@ fun ReceiptSuccessScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedButton(
-                    onClick = { viewModel.shareReceiptText(receiptWithLines) },
+                    onClick = { viewModel.shareReceiptText(currentReceipt) },
                     modifier = Modifier.weight(1f).height(50.dp).testTag("receipt_share_text_button"),
                 ) {
                     Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -161,7 +164,7 @@ fun ReceiptSuccessScreen(
                     Text("Share")
                 }
                 OutlinedButton(
-                    onClick = { viewModel.shareReceiptPdf(receiptWithLines) },
+                    onClick = { viewModel.shareReceiptPdf(currentReceipt) },
                     modifier = Modifier.weight(1f).height(50.dp).testTag("receipt_share_pdf_button"),
                 ) {
                     Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))

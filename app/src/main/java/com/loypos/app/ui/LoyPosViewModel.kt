@@ -22,6 +22,7 @@ import com.loypos.app.data.local.CartLine
 import com.loypos.app.data.local.CashMovementEntity
 import com.loypos.app.data.local.CategoryEntity
 import com.loypos.app.data.local.CustomerEntity
+import com.loypos.app.data.local.DailyRevenuePoint
 import com.loypos.app.data.local.DaySalesSummary
 import com.loypos.app.data.local.DbStats
 import com.loypos.app.data.local.ItemEntity
@@ -32,11 +33,15 @@ import com.loypos.app.data.local.ShiftStats
 import com.loypos.app.data.local.StockMovementEntity
 import com.loypos.app.data.local.TicketWithLines
 import com.loypos.app.data.local.UserEntity
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -118,6 +123,46 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         repo.shiftsFlow,
         repo.cashMovementsFlow,
     ) { shifts, cashMoves -> shifts to cashMoves }
+
+    private val _inventorySearchQuery = MutableStateFlow("")
+    val inventorySearchQuery: StateFlow<String> = _inventorySearchQuery.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val inventoryProducts: StateFlow<List<ItemEntity>> = _inventorySearchQuery
+        .flatMapLatest { query -> repo.observeProductsFiltered(query) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
+
+    fun setInventorySearch(query: String) {
+        _inventorySearchQuery.value = query
+    }
+
+    private val _revenueTrendDays = MutableStateFlow(7)
+    val revenueTrendDays: StateFlow<Int> = _revenueTrendDays.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val dailyRevenueTrend: StateFlow<List<DailyRevenuePoint>> = combine(
+        _revenueTrendDays,
+        _session.map { it.activeBranchId }.distinctUntilChanged(),
+    ) { days, branchId -> days to branchId }
+        .flatMapLatest { (days, branchId) ->
+            val sinceMs = startOfTodayMs() - (days - 1).coerceAtLeast(0) * 86_400_000L
+            repo.observeCompletedSalesSince(sinceMs).map { sales ->
+                repo.computeDailyRevenueTrend(sales, days, branchId)
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList(),
+        )
+
+    fun setRevenueTrendDays(days: Int) {
+        _revenueTrendDays.value = days.coerceIn(7, 30)
+    }
 
     val dataState: StateFlow<LoyPosDataState> = combine(
         coreDataFlow,

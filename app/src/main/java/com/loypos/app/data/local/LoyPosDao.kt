@@ -100,6 +100,9 @@ interface SaleDao {
     @Query("SELECT * FROM sales ORDER BY created_at DESC")
     fun observeSales(): Flow<List<SaleEntity>>
 
+    @Query("SELECT * FROM sales WHERE status = 'completed' AND created_at >= :sinceMs ORDER BY created_at ASC")
+    fun observeCompletedSalesSince(sinceMs: Long): Flow<List<SaleEntity>>
+
     @Query("SELECT * FROM sale_items")
     fun observeSaleItems(): Flow<List<SaleItemEntity>>
 
@@ -128,6 +131,24 @@ interface SaleDao {
 
     @Query("DELETE FROM sales WHERE id = :id")
     suspend fun deleteSaleById(id: String)
+}
+
+@Dao
+interface SaleItemDao {
+    @Query("SELECT * FROM sale_items")
+    fun observeSaleItems(): Flow<List<SaleItemEntity>>
+
+    @Query("SELECT * FROM sale_items WHERE receipt_id = :saleId")
+    suspend fun getSaleItemsForSale(saleId: String): List<SaleItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSaleItem(item: SaleItemEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSaleItems(items: List<SaleItemEntity>)
+
+    @Query("DELETE FROM sale_items WHERE receipt_id = :saleId")
+    suspend fun deleteSaleItemsForSale(saleId: String)
 }
 
 @Dao

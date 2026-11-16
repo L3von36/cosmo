@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Category
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalOffer
@@ -40,7 +41,6 @@ import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.loypos.app.core.formatCents
 import com.loypos.app.core.formatQty
@@ -87,7 +88,7 @@ import com.loypos.app.core.newId
 import com.loypos.app.core.parseAmountToCents
 import com.loypos.app.core.parseQty
 import com.loypos.app.data.local.CategoryEntity
-import com.loypos.app.data.local.ItemEntity
+import com.loypos.app.data.local.ProductEntity
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
@@ -109,26 +110,21 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ItemsScreen(
+fun InventoryScreen(
     viewModel: LoyPosViewModel,
     session: UiSessionState,
     data: LoyPosDataState,
     onNavigateToStock: () -> Unit,
 ) {
     var tabIndex by remember { mutableIntStateOf(0) }
-    var search by remember { mutableStateOf("") }
-    var editingItem by remember { mutableStateOf<ItemEntity?>(null) }
+    val search by viewModel.inventorySearchQuery.collectAsStateWithLifecycle()
+    val roomProducts by viewModel.inventoryProducts.collectAsStateWithLifecycle()
+    var editingItem by remember { mutableStateOf<ProductEntity?>(null) }
     var isCreatingItem by remember { mutableStateOf(false) }
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var isCreatingCategory by remember { mutableStateOf(false) }
 
     val sym = data.settings.currencySymbol
-    val filteredItems = remember(data.items, search) {
-        val q = search.trim().lowercase()
-        if (q.isEmpty()) data.items else data.items.filter {
-            it.name.lowercase().contains(q) || it.sku.lowercase().contains(q) || it.barcode.lowercase().contains(q)
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -147,9 +143,21 @@ fun ItemsScreen(
                     },
                 )
                 TabRow(selectedTabIndex = tabIndex, containerColor = LoySurface) {
-                    Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }, text = { Text("Items (${data.items.size})") })
-                    Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }, text = { Text("Categories (${data.categories.size})") })
-                    Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }, text = { Text("Discounts") })
+                    Tab(
+                        selected = tabIndex == 0,
+                        onClick = { tabIndex = 0 },
+                        text = { Text("Products (${data.items.size})") },
+                    )
+                    Tab(
+                        selected = tabIndex == 1,
+                        onClick = { tabIndex = 1 },
+                        text = { Text("Categories (${data.categories.size})") },
+                    )
+                    Tab(
+                        selected = tabIndex == 2,
+                        onClick = { tabIndex = 2 },
+                        text = { Text("Discounts") },
+                    )
                 }
             }
         },
@@ -159,7 +167,7 @@ fun ItemsScreen(
                     onClick = {
                         if (tabIndex == 0) {
                             isCreatingItem = true
-                            editingItem = ItemEntity(
+                            editingItem = ProductEntity(
                                 id = newId(),
                                 categoryId = data.categories.firstOrNull()?.id,
                                 name = "",
@@ -178,9 +186,12 @@ fun ItemsScreen(
                     },
                     containerColor = LoyGreen,
                     contentColor = Color.White,
-                    modifier = Modifier.testTag("items_fab_add"),
+                    modifier = Modifier.testTag("inventory_fab_add"),
                 ) {
-                    Icon(Icons.Outlined.Add, contentDescription = if (tabIndex == 0) "New item" else "New category")
+                    Icon(
+                        Icons.Outlined.Add,
+                        contentDescription = if (tabIndex == 0) "New product" else "New category",
+                    )
                 }
             }
         },
@@ -191,23 +202,38 @@ fun ItemsScreen(
                 0 -> {
                     OutlinedTextField(
                         value = search,
-                        onValueChange = { search = it },
-                        placeholder = { Text("Search items, SKU, barcode") },
-                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                        onValueChange = { viewModel.setInventorySearch(it) },
+                        placeholder = { Text("Search by product name or SKU") },
+                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = "Search") },
+                        trailingIcon = {
+                            if (search.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { viewModel.setInventorySearch("") },
+                                    modifier = Modifier.size(48.dp).testTag("inventory_search_clear"),
+                                ) {
+                                    Icon(Icons.Outlined.Close, contentDescription = "Clear search")
+                                }
+                            }
+                        },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(LoySurface)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .testTag("inventory_search_input"),
                     )
                     HorizontalDivider(color = LoyBorder)
 
-                    if (filteredItems.isEmpty()) {
+                    if (roomProducts.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             EmptyState(
                                 icon = Icons.Outlined.Inventory2,
-                                title = "No items found",
-                                subtitle = "Tap + to add a product to your catalog.",
+                                title = if (search.isBlank()) "No products found" else "No matching products",
+                                subtitle = if (search.isBlank()) {
+                                    "Tap + to add a product to your inventory."
+                                } else {
+                                    "No products match \"$search\" by name or SKU."
+                                },
                             )
                         }
                     } else {
@@ -215,8 +241,9 @@ fun ItemsScreen(
                             contentPadding = PaddingValues(14.dp, 10.dp, 14.dp, 88.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(filteredItems, key = { it.id }) { item ->
-                                val catName = data.categories.firstOrNull { it.id == item.categoryId }?.name ?: "Uncategorized"
+                            items(roomProducts, key = { it.id }) { product ->
+                                val catName = data.categories.firstOrNull { it.id == product.categoryId }?.name
+                                    ?: "Uncategorized"
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = LoySurface,
@@ -226,27 +253,27 @@ fun ItemsScreen(
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
                                             isCreatingItem = false
-                                            editingItem = item
+                                            editingItem = product
                                         }
-                                        .testTag("manage_item_${item.id}"),
+                                        .testTag("inventory_product_${product.id}"),
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        ItemThumbnail(item = item, size = 44.dp)
+                                        ItemThumbnail(item = product, size = 44.dp)
                                         Spacer(Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(item.name, fontWeight = FontWeight.SemiBold)
+                                            Text(product.name, fontWeight = FontWeight.SemiBold)
                                             Text(
-                                                "$catName${if (item.sku.isNotEmpty()) " · ${item.sku}" else ""}",
+                                                "$catName${if (product.sku.isNotEmpty()) " · SKU ${product.sku}" else ""}",
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = LoyTextSecondary,
                                             )
-                                            StockDotBadge(item = item)
+                                            StockDotBadge(item = product)
                                         }
                                         Text(
-                                            formatCents(item.priceCents, sym),
+                                            formatCents(product.priceCents, sym),
                                             style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
                                             fontWeight = FontWeight.Bold,
                                         )
@@ -302,7 +329,7 @@ fun ItemsScreen(
                                         Spacer(Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(cat.name, fontWeight = FontWeight.SemiBold)
-                                            Text("$count items", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                            Text("$count products", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                         }
                                     }
                                 }
@@ -323,7 +350,7 @@ fun ItemsScreen(
                                     Text("Ticket Discounts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                 }
                                 Text(
-                                    "LoyPOS supports whole-sale percentage discounts (5%, 10%, 15%, 20%, 25%, or custom %) and fixed currency discounts directly on the Sales ticket panel.",
+                                    "LoyPOS supports whole-sale percentage discounts (5%, 10%, 15%, 20%, 25%, or custom %) and fixed currency discounts directly on the Checkout ticket panel.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = LoyTextSecondary,
                                 )
@@ -341,8 +368,8 @@ fun ItemsScreen(
     }
 
     editingItem?.let { item ->
-        ItemEditorBottomSheet(
-            item = item,
+        ProductEditorBottomSheet(
+            product = item,
             isNew = isCreatingItem,
             data = data,
             onSave = { updated, pickedUri, removePhoto ->
@@ -376,30 +403,38 @@ fun ItemsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun ItemEditorBottomSheet(
-    item: ItemEntity,
+private fun ProductEditorBottomSheet(
+    product: ProductEntity,
     isNew: Boolean,
     data: LoyPosDataState,
-    onSave: (ItemEntity, Uri?, Boolean) -> Unit,
+    onSave: (ProductEntity, Uri?, Boolean) -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(item.name) }
-    var categoryId by remember { mutableStateOf(item.categoryId) }
+    var name by remember { mutableStateOf(product.name) }
+    var categoryId by remember { mutableStateOf(product.categoryId) }
     var catExpanded by remember { mutableStateOf(false) }
     var priceText by remember {
-        mutableStateOf(if (item.priceCents == 0L) "" else (item.priceCents / 100.0).let { if (item.priceCents % 100L == 0L) (item.priceCents / 100L).toString() else "%.2f".format(it) })
+        mutableStateOf(
+            if (product.priceCents == 0L) "" else (product.priceCents / 100.0).let {
+                if (product.priceCents % 100L == 0L) (product.priceCents / 100L).toString() else "%.2f".format(it)
+            }
+        )
     }
     var costText by remember {
-        mutableStateOf(if (item.costCents == 0L) "" else (item.costCents / 100.0).let { if (item.costCents % 100L == 0L) (item.costCents / 100L).toString() else "%.2f".format(it) })
+        mutableStateOf(
+            if (product.costCents == 0L) "" else (product.costCents / 100.0).let {
+                if (product.costCents % 100L == 0L) (product.costCents / 100L).toString() else "%.2f".format(it)
+            }
+        )
     }
-    var sku by remember { mutableStateOf(item.sku) }
-    var barcode by remember { mutableStateOf(item.barcode) }
-    var trackStock by remember { mutableStateOf(item.trackStock) }
-    var stockText by remember { mutableStateOf(formatQty(item.stock)) }
+    var sku by remember { mutableStateOf(product.sku) }
+    var barcode by remember { mutableStateOf(product.barcode) }
+    var trackStock by remember { mutableStateOf(product.trackStock) }
+    var stockText by remember { mutableStateOf(formatQty(product.stock)) }
     var selectedBranches by remember {
         mutableStateOf(
-            if (item.branchIds.isEmpty()) emptySet() else item.branchIds.split(",").filter { it.isNotEmpty() }.toSet()
+            if (product.branchIds.isEmpty()) emptySet() else product.branchIds.split(",").filter { it.isNotEmpty() }.toSet()
         )
     }
     var pickedPhotoUri by remember { mutableStateOf<Uri?>(null) }
@@ -429,15 +464,14 @@ private fun ItemEditorBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(if (isNew) "New Item" else "Edit Item", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(if (isNew) "New Product" else "Edit Product", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 if (!isNew) {
                     IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete item", tint = LoyError)
+                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete product", tint = LoyError)
                     }
                 }
             }
 
-            // Photo picker row (zero storage permission via Android Photo Picker)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
                     modifier = Modifier
@@ -448,13 +482,13 @@ private fun ItemEditorBottomSheet(
                 ) {
                     val model: Any? = when {
                         pickedPhotoUri != null -> pickedPhotoUri
-                        !removeExistingPhoto && item.hasPhoto && File(item.imagePath).exists() -> File(item.imagePath)
+                        !removeExistingPhoto && product.hasPhoto && File(product.imagePath).exists() -> File(product.imagePath)
                         else -> null
                     }
                     if (model != null) {
                         AsyncImage(
                             model = model,
-                            contentDescription = "Item photo",
+                            contentDescription = "Product photo",
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
@@ -470,7 +504,7 @@ private fun ItemEditorBottomSheet(
                 ) {
                     Text("Choose photo")
                 }
-                if (pickedPhotoUri != null || (!removeExistingPhoto && item.hasPhoto)) {
+                if (pickedPhotoUri != null || (!removeExistingPhoto && product.hasPhoto)) {
                     TextButton(onClick = {
                         pickedPhotoUri = null
                         removeExistingPhoto = true
@@ -483,7 +517,7 @@ private fun ItemEditorBottomSheet(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Item name *") },
+                label = { Text("Product name *") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("item_name_input"),
             )
@@ -616,7 +650,7 @@ private fun ItemEditorBottomSheet(
                 onClick = {
                     val cleanName = name.trim()
                     if (cleanName.isEmpty()) return@Button
-                    val updated = item.copy(
+                    val updated = product.copy(
                         categoryId = categoryId,
                         name = cleanName,
                         priceCents = parseAmountToCents(priceText) ?: 0L,
@@ -632,7 +666,7 @@ private fun ItemEditorBottomSheet(
                 enabled = name.trim().isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(52.dp).testTag("item_save_button"),
             ) {
-                Text("Save item")
+                Text("Save product")
             }
             Spacer(Modifier.height(10.dp))
         }

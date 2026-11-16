@@ -29,6 +29,14 @@ LoyPOS is an offline-first retail Point-of-Sale (POS) and inventory management A
 gradle assembleDebug
 ```
 
+## GitHub Actions & Releases
+
+The repository includes a GitHub Actions workflow (`.github/workflows/release.yml`) that builds both Debug and Release APKs (`loypos-debug.apk` and `loypos-release.apk`):
+
+- **Branch pushes (`main` / `master`)**: Builds both APKs and uploads them as workflow artifacts.
+- **Version tags (`v*`, e.g. `v1.0.0`) or manual `workflow_dispatch`**: Builds both APKs and publishes a GitHub Release with downloadable APK assets.
+- **Signing**: Uses `debug.keystore.base64` by default, or optionally signs the release APK when `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` repository secrets are configured.
+
 ## License
 
 MIT - see [LICENSE](LICENSE).

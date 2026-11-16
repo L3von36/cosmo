@@ -46,10 +46,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.loypos.app.core.formatCents
 import com.loypos.app.core.parseAmountToCents
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.TransactionViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.CurrencyNumPad
 import com.loypos.app.ui.theme.LoyBackground
@@ -68,17 +70,17 @@ import kotlin.math.ceil
 @Composable
 fun PaymentScreen(
     viewModel: LoyPosViewModel,
+    transactionViewModel: TransactionViewModel,
     session: UiSessionState,
     data: LoyPosDataState,
     onBack: () -> Unit,
     onPaymentCompleted: () -> Unit,
 ) {
-
-    val totals = remember(session.cart, session.cartDiscount, data.settings) {
-        viewModel.totalsForCart(data)
-    }
+    val cartSession by transactionViewModel.cartSession.collectAsStateWithLifecycle()
+    val totals by transactionViewModel.cartTotals.collectAsStateWithLifecycle()
     val sym = data.settings.currencySymbol
     val totalCents = totals.totalCents
+    val selectedCustomer = data.customers.firstOrNull { it.id == cartSession.customerId }
 
     var paymentMethod by remember { mutableStateOf("cash") }
     var tenderedText by remember(totalCents) {
@@ -92,7 +94,7 @@ fun PaymentScreen(
     } else {
         parseAmountToCents(tenderedText) ?: 0L
     }
-    val canCharge = session.cart.isNotEmpty() && (paymentMethod == "card" || paidCents >= totalCents)
+    val canCharge = cartSession.items.isNotEmpty() && (paymentMethod == "card" || paidCents >= totalCents)
     val diffCents = paidCents - totalCents
 
     val quickAmounts = remember(totalCents) {
@@ -285,7 +287,19 @@ fun PaymentScreen(
                 }
 
                 Button(
-                    onClick = { viewModel.completeSale(paymentMethod, paidCents, onSuccess = onPaymentCompleted) },
+                    onClick = {
+                        transactionViewModel.finalizeSale(
+                            paymentType = paymentMethod,
+                            paidCents = paidCents,
+                            settings = data.settings,
+                            customer = selectedCustomer,
+                            branchId = session.activeBranchId,
+                            cashier = session.currentUser,
+                        ) {
+                            viewModel.refreshHealthAndBackups()
+                            onPaymentCompleted()
+                        }
+                    },
                     enabled = canCharge,
                     modifier = Modifier
                         .fillMaxWidth()

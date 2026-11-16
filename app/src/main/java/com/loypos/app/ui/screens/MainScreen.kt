@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -44,6 +45,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.TransactionViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.navigation.AccountRoute
 import com.loypos.app.ui.navigation.CartRoute
@@ -75,6 +77,7 @@ private data class TopLevelDestination(
 @Composable
 fun MainScreen(
     viewModel: LoyPosViewModel,
+    transactionViewModel: TransactionViewModel,
     session: UiSessionState,
     data: LoyPosDataState,
 ) {
@@ -84,6 +87,14 @@ fun MainScreen(
         if (msg != null) {
             snackbarHostState.showSnackbar(msg)
             viewModel.consumeMessage()
+        }
+    }
+    val txMessage by transactionViewModel.transactionMessage.collectAsStateWithLifecycle()
+    LaunchedEffect(txMessage) {
+        val msg = txMessage
+        if (msg != null) {
+            snackbarHostState.showSnackbar(msg)
+            transactionViewModel.consumeMessage()
         }
     }
 
@@ -204,6 +215,7 @@ fun MainScreen(
                         composable<CheckoutRoute> {
                             SellScreen(
                                 viewModel = viewModel,
+                                transactionViewModel = transactionViewModel,
                                 session = session,
                                 data = data,
                                 onNavigateToCart = { navController.navigate(CartRoute) },
@@ -212,7 +224,7 @@ fun MainScreen(
                         }
 
                         composable<InventoryRoute> {
-                            ItemsScreen(
+                            InventoryScreen(
                                 viewModel = viewModel,
                                 session = session,
                                 data = data,
@@ -267,6 +279,7 @@ fun MainScreen(
                         composable<CartRoute> {
                             CartScreen(
                                 viewModel = viewModel,
+                                transactionViewModel = transactionViewModel,
                                 session = session,
                                 data = data,
                                 onBack = { navController.popBackStack() },
@@ -277,6 +290,7 @@ fun MainScreen(
                         composable<PaymentRoute> {
                             PaymentScreen(
                                 viewModel = viewModel,
+                                transactionViewModel = transactionViewModel,
                                 session = session,
                                 data = data,
                                 onBack = { navController.popBackStack() },
@@ -294,7 +308,7 @@ fun MainScreen(
                         composable<ReceiptSuccessRoute> {
                             ReceiptSuccessScreen(
                                 viewModel = viewModel,
-                                session = session,
+                                transactionViewModel = transactionViewModel,
                                 data = data,
                                 onDone = {
                                     navController.popBackStack(CheckoutRoute, inclusive = false)

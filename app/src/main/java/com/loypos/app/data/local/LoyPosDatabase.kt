@@ -35,6 +35,7 @@ abstract class LoyPosDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
     abstract fun categoryDao(): CategoryDao
     abstract fun saleDao(): SaleDao
+    abstract fun saleItemDao(): SaleItemDao
 
     companion object {
         const val DB_NAME = "loypos.db"

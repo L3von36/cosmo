@@ -67,16 +67,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.loypos.app.core.formatCents
 import com.loypos.app.core.formatQty
 import com.loypos.app.core.newId
 import com.loypos.app.core.nowMs
-import com.loypos.app.data.local.BranchEntity
 import com.loypos.app.data.local.CartLine
 import com.loypos.app.data.local.CustomerEntity
 import com.loypos.app.data.local.ItemEntity
+import com.loypos.app.ui.CartSessionState
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
+import com.loypos.app.ui.TransactionViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.BranchPickerSheet
 import com.loypos.app.ui.components.CustomerPickerSheet
@@ -103,6 +105,7 @@ import com.loypos.app.ui.theme.TabularMoneyStyle
 @Composable
 fun SellScreen(
     viewModel: LoyPosViewModel,
+    transactionViewModel: TransactionViewModel,
     session: UiSessionState,
     data: LoyPosDataState,
     onNavigateToCart: () -> Unit,
@@ -116,6 +119,9 @@ fun SellScreen(
     var showCustomerSheet by remember { mutableStateOf(false) }
     var showSaveTicketDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
+
+    val cartSession by transactionViewModel.cartSession.collectAsStateWithLifecycle()
+    val totals by transactionViewModel.cartTotals.collectAsStateWithLifecycle()
 
     val activeBranch = data.branches.firstOrNull { it.id == session.activeBranchId }
     val branchTickets = remember(data.tickets, session.activeBranchId) {
@@ -131,9 +137,6 @@ fun SellScreen(
                     item.sku.lowercase().contains(q) ||
                     item.barcode.lowercase().contains(q))
         }
-    }
-    val totals = remember(session.cart, session.cartDiscount, data.settings) {
-        viewModel.totalsForCart(data)
     }
     val sym = data.settings.currencySymbol
     val isCashier = session.currentUser?.isCashier == true
@@ -221,11 +224,11 @@ fun SellScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 item {
-                    val activeSelected = session.openTicketId == null
+                    val activeSelected = cartSession.openTicketId == null
                     FilterChip(
                         selected = activeSelected,
-                        onClick = { if (!activeSelected) viewModel.clearCart() },
-                        label = { Text("Sale${if (session.cart.isNotEmpty() && activeSelected) " (${session.cart.size})" else ""}") },
+                        onClick = { if (!activeSelected) transactionViewModel.clearCart() },
+                        label = { Text("Sale${if (cartSession.items.isNotEmpty() && activeSelected) " (${cartSession.items.size})" else ""}") },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = LoyGreenLight,
                             selectedLabelColor = LoyGreen,
@@ -233,10 +236,10 @@ fun SellScreen(
                     )
                 }
                 items(branchTickets, key = { it.ticket.id }) { t ->
-                    val isSel = session.openTicketId == t.ticket.id
+                    val isSel = cartSession.openTicketId == t.ticket.id
                     FilterChip(
                         selected = isSel,
-                        onClick = { viewModel.loadTicket(t) },
+                        onClick = { transactionViewModel.loadTicket(t) },
                         label = { Text("${t.ticket.name.ifEmpty { "Ticket" }} (${t.lines.size})") },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = LoyGreenLight,
@@ -309,12 +312,12 @@ fun SellScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(filteredItems, key = { it.id }) { item ->
-                                val qtyInCart = session.cart.firstOrNull { it.itemId == item.id }?.qty ?: 0.0
+                                val qtyInCart = cartSession.items.firstOrNull { it.itemId == item.id }?.qty ?: 0.0
                                 ProductSaleRow(
                                     item = item,
                                     currencySymbol = sym,
                                     qtyInCart = qtyInCart,
-                                    onAdd = { viewModel.addToCart(item) },
+                                    onAdd = { transactionViewModel.addProductToCart(item) },
                                 )
                             }
                         }
@@ -322,7 +325,7 @@ fun SellScreen(
 
                     if (!isWide) {
                         BottomCartBar(
-                            itemCount = session.cart.size,
+                            itemCount = cartSession.items.size,
                             totalCents = totals.totalCents,
                             currencySymbol = sym,
                             onOpenCart = onNavigateToCart,
@@ -338,7 +341,7 @@ fun SellScreen(
                         border = BorderStroke(1.dp, LoyBorder),
                     ) {
                         ReceiptPanelContent(
-                            session = session,
+                            cartSession = cartSession,
                             data = data,
                             totals = totals,
                             onEditLine = { editingLine = it },
@@ -346,7 +349,7 @@ fun SellScreen(
                             onOpenCustomer = { showCustomerSheet = true },
                             onOpenNote = { showNoteDialog = true },
                             onSaveTicket = { showSaveTicketDialog = true },
-                            onClear = { viewModel.clearCart() },
+                            onClear = { transactionViewModel.clearCart() },
                             onCharge = onNavigateToPayment,
                         )
                     }
@@ -368,8 +371,8 @@ fun SellScreen(
         TicketsBottomSheet(
             tickets = branchTickets,
             currencySymbol = sym,
-            onLoad = { viewModel.loadTicket(it) },
-            onDelete = { viewModel.deleteTicket(it) },
+            onLoad = { transactionViewModel.loadTicket(it) },
+            onDelete = { transactionViewModel.deleteTicket(it) },
             onDismiss = { showTicketsSheet = false },
         )
     }
@@ -378,17 +381,17 @@ fun SellScreen(
         LineEditorBottomSheet(
             line = line,
             currencySymbol = sym,
-            onUpdateQty = { viewModel.updateCartLineQty(line.itemId, it) },
-            onDelete = { viewModel.removeFromCart(line.itemId) },
+            onUpdateQty = { transactionViewModel.updateCartItemQty(line.itemId, it) },
+            onDelete = { transactionViewModel.removeFromCart(line.itemId) },
             onDismiss = { editingLine = null },
         )
     }
 
     if (showDiscountSheet) {
         DiscountBottomSheet(
-            current = session.cartDiscount,
+            current = cartSession.discount,
             currencySymbol = sym,
-            onApply = { viewModel.setDiscount(it) },
+            onApply = { transactionViewModel.setDiscount(it) },
             onDismiss = { showDiscountSheet = false },
         )
     }
@@ -396,23 +399,24 @@ fun SellScreen(
     if (showCustomerSheet) {
         CustomerPickerSheet(
             customers = data.customers,
-            selectedId = session.cartCustomerId,
-            onSelect = { viewModel.setCustomer(it?.id) },
+            selectedId = cartSession.customerId,
+            onSelect = { transactionViewModel.setCustomer(it?.id) },
             onCreateCustomer = { name, phone ->
                 val c = CustomerEntity(id = newId(), name = name, phone = phone, createdAt = nowMs())
                 viewModel.saveCustomer(c)
-                viewModel.setCustomer(c.id)
+                transactionViewModel.setCustomer(c.id)
             },
             onDismiss = { showCustomerSheet = false },
         )
     }
 
     if (showSaveTicketDialog) {
+        val currentCustomer = data.customers.firstOrNull { it.id == cartSession.customerId }
         SaveTicketDialog(
-            initialName = branchTickets.firstOrNull { it.ticket.id == session.openTicketId }?.ticket?.name
+            initialName = branchTickets.firstOrNull { it.ticket.id == cartSession.openTicketId }?.ticket?.name
                 ?: "Table ${branchTickets.size + 1}",
             onSave = { name ->
-                viewModel.saveCurrentTicket(name)
+                transactionViewModel.saveCurrentTicket(name, currentCustomer, session.activeBranchId)
                 showSaveTicketDialog = false
             },
             onDismiss = { showSaveTicketDialog = false },
@@ -421,9 +425,9 @@ fun SellScreen(
 
     if (showNoteDialog) {
         NoteInputDialog(
-            initialNote = session.cartNote,
+            initialNote = cartSession.note,
             onSave = { note ->
-                viewModel.setCartNote(note)
+                transactionViewModel.setCartNote(note)
                 showNoteDialog = false
             },
             onDismiss = { showNoteDialog = false },
@@ -558,6 +562,7 @@ private fun BottomCartBar(
 @Composable
 fun CartScreen(
     viewModel: LoyPosViewModel,
+    transactionViewModel: TransactionViewModel,
     session: UiSessionState,
     data: LoyPosDataState,
     onBack: () -> Unit,
@@ -569,15 +574,14 @@ fun CartScreen(
     var showSaveTicketDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
 
-    val totals = remember(session.cart, session.cartDiscount, data.settings) {
-        viewModel.totalsForCart(data)
-    }
+    val cartSession by transactionViewModel.cartSession.collectAsStateWithLifecycle()
+    val totals by transactionViewModel.cartTotals.collectAsStateWithLifecycle()
     val sym = data.settings.currencySymbol
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Current Ticket (${session.cart.size})", fontWeight = FontWeight.Bold) },
+                title = { Text("Current Ticket (${cartSession.items.size})", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back to catalog")
@@ -590,7 +594,7 @@ fun CartScreen(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             ReceiptPanelContent(
-                session = session,
+                cartSession = cartSession,
                 data = data,
                 totals = totals,
                 onEditLine = { editingLine = it },
@@ -598,7 +602,7 @@ fun CartScreen(
                 onOpenCustomer = { showCustomerSheet = true },
                 onOpenNote = { showNoteDialog = true },
                 onSaveTicket = { showSaveTicketDialog = true },
-                onClear = { viewModel.clearCart() },
+                onClear = { transactionViewModel.clearCart() },
                 onCharge = onNavigateToPayment,
             )
         }
@@ -608,37 +612,38 @@ fun CartScreen(
         LineEditorBottomSheet(
             line = line,
             currencySymbol = sym,
-            onUpdateQty = { viewModel.updateCartLineQty(line.itemId, it) },
-            onDelete = { viewModel.removeFromCart(line.itemId) },
+            onUpdateQty = { transactionViewModel.updateCartItemQty(line.itemId, it) },
+            onDelete = { transactionViewModel.removeFromCart(line.itemId) },
             onDismiss = { editingLine = null },
         )
     }
     if (showDiscountSheet) {
         DiscountBottomSheet(
-            current = session.cartDiscount,
+            current = cartSession.discount,
             currencySymbol = sym,
-            onApply = { viewModel.setDiscount(it) },
+            onApply = { transactionViewModel.setDiscount(it) },
             onDismiss = { showDiscountSheet = false },
         )
     }
     if (showCustomerSheet) {
         CustomerPickerSheet(
             customers = data.customers,
-            selectedId = session.cartCustomerId,
-            onSelect = { viewModel.setCustomer(it?.id) },
+            selectedId = cartSession.customerId,
+            onSelect = { transactionViewModel.setCustomer(it?.id) },
             onCreateCustomer = { name, phone ->
                 val c = CustomerEntity(id = newId(), name = name, phone = phone, createdAt = nowMs())
                 viewModel.saveCustomer(c)
-                viewModel.setCustomer(c.id)
+                transactionViewModel.setCustomer(c.id)
             },
             onDismiss = { showCustomerSheet = false },
         )
     }
     if (showSaveTicketDialog) {
+        val currentCustomer = data.customers.firstOrNull { it.id == cartSession.customerId }
         SaveTicketDialog(
             initialName = "Ticket ${data.tickets.size + 1}",
             onSave = { name ->
-                viewModel.saveCurrentTicket(name)
+                transactionViewModel.saveCurrentTicket(name, currentCustomer, session.activeBranchId)
                 showSaveTicketDialog = false
                 onBack()
             },
@@ -647,9 +652,9 @@ fun CartScreen(
     }
     if (showNoteDialog) {
         NoteInputDialog(
-            initialNote = session.cartNote,
+            initialNote = cartSession.note,
             onSave = { note ->
-                viewModel.setCartNote(note)
+                transactionViewModel.setCartNote(note)
                 showNoteDialog = false
             },
             onDismiss = { showNoteDialog = false },
@@ -659,7 +664,7 @@ fun CartScreen(
 
 @Composable
 fun ReceiptPanelContent(
-    session: UiSessionState,
+    cartSession: CartSessionState,
     data: LoyPosDataState,
     totals: com.loypos.app.core.SaleTotals,
     onEditLine: (CartLine) -> Unit,
@@ -671,7 +676,7 @@ fun ReceiptPanelContent(
     onCharge: () -> Unit,
 ) {
     val sym = data.settings.currencySymbol
-    val customer = data.customers.firstOrNull { it.id == session.cartCustomerId }
+    val customer = data.customers.firstOrNull { it.id == cartSession.customerId }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Quick action chips row
@@ -689,12 +694,12 @@ fun ReceiptPanelContent(
             }
             item {
                 FilterChip(
-                    selected = session.cartDiscount != null,
+                    selected = cartSession.discount != null,
                     onClick = onOpenDiscount,
                     leadingIcon = { Icon(Icons.Outlined.LocalOffer, contentDescription = null, modifier = Modifier.size(16.dp)) },
                     label = {
                         Text(
-                            session.cartDiscount?.let {
+                            cartSession.discount?.let {
                                 if (it.type == "percent") "${formatQty(it.value)}% off" else "-${formatCents((it.value * 100).toLong(), sym)}"
                             } ?: "Discount"
                         )
@@ -703,13 +708,13 @@ fun ReceiptPanelContent(
             }
             item {
                 FilterChip(
-                    selected = session.cartNote.isNotEmpty(),
+                    selected = cartSession.note.isNotEmpty(),
                     onClick = onOpenNote,
                     leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                    label = { Text(if (session.cartNote.isEmpty()) "Note" else "Note ✓") },
+                    label = { Text(if (cartSession.note.isEmpty()) "Note" else "Note ✓") },
                 )
             }
-            if (session.cart.isNotEmpty()) {
+            if (cartSession.items.isNotEmpty()) {
                 item {
                     FilterChip(
                         selected = false,
@@ -722,7 +727,7 @@ fun ReceiptPanelContent(
         }
         HorizontalDivider(color = LoyBorder)
 
-        if (session.cart.isEmpty()) {
+        if (cartSession.items.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 EmptyState(
                     icon = Icons.Outlined.ShoppingBag,
@@ -736,7 +741,7 @@ fun ReceiptPanelContent(
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(session.cart, key = { it.itemId }) { line ->
+                items(cartSession.items, key = { it.itemId }) { line ->
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = LoySurfaceVariant,
@@ -806,7 +811,7 @@ fun ReceiptPanelContent(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(
                         onClick = onSaveTicket,
-                        enabled = session.cart.isNotEmpty(),
+                        enabled = cartSession.items.isNotEmpty(),
                         modifier = Modifier.weight(1f).height(50.dp).testTag("save_ticket_button"),
                     ) {
                         Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -815,7 +820,7 @@ fun ReceiptPanelContent(
                     }
                     Button(
                         onClick = onCharge,
-                        enabled = session.cart.isNotEmpty(),
+                        enabled = cartSession.items.isNotEmpty(),
                         modifier = Modifier.weight(1.6f).height(50.dp).testTag("panel_charge_button"),
                     ) {
                         Text("Charge ${formatCents(totals.totalCents, sym)}")

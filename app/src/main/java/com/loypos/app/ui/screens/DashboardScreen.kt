@@ -1,7 +1,6 @@
 package com.loypos.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Inventory2
@@ -33,6 +33,8 @@ import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +45,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,23 +53,36 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.loypos.app.core.formatCents
+import com.loypos.app.core.formatCentsShort
 import com.loypos.app.core.formatDateTime
-import com.loypos.app.core.startOfTodayMs
-import com.loypos.app.data.local.DailySalesPoint
+import com.loypos.app.data.local.DailyRevenuePoint
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
+import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLine
+import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
+import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
+import com.patrykandpatrick.vico.compose.common.fill
+import com.patrykandpatrick.vico.core.cartesian.axis.HorizontalAxis
+import com.patrykandpatrick.vico.core.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianChartModelProducer
+import com.patrykandpatrick.vico.core.cartesian.data.CartesianValueFormatter
+import com.patrykandpatrick.vico.core.cartesian.data.lineSeries
+import com.patrykandpatrick.vico.core.cartesian.layer.LineCartesianLayer
+import com.patrykandpatrick.vico.core.common.shader.ShaderProvider
+import kotlin.math.roundToLong
 import com.loypos.app.ui.components.BranchPickerSheet
 import com.loypos.app.ui.components.EmptyState
 import com.loypos.app.ui.components.GroupCard
@@ -86,7 +102,6 @@ import com.loypos.app.ui.theme.LoyTextPrimary
 import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.LoyWarning
 import com.loypos.app.ui.theme.TabularMoneyStyle
-import java.util.Calendar
 
 private data class QuickActionItem(
     val label: String,
@@ -135,21 +150,8 @@ fun DashboardScreen(
         }
     }
 
-    val last7Days = remember(branchReceipts) {
-        val todayStart = startOfTodayMs()
-        val cal = Calendar.getInstance()
-        val dayLabels = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-        (6 downTo 0).map { offset ->
-            val start = todayStart - offset * 86_400_000L
-            val end = start + 86_400_000L
-            cal.timeInMillis = start
-            val label = dayLabels[cal.get(Calendar.DAY_OF_WEEK) - 1]
-            val sum = branchReceipts
-                .filter { it.receipt.isCompleted && it.receipt.createdAt in start until end }
-                .sumOf { it.receipt.totalCents }
-            DailySalesPoint(label, sum)
-        }
-    }
+    val trendDays by viewModel.revenueTrendDays.collectAsStateWithLifecycle()
+    val revenueTrend by viewModel.dailyRevenueTrend.collectAsStateWithLifecycle()
 
     val quickActions = remember(
         onNavigateToCheckout,
@@ -383,49 +385,15 @@ fun DashboardScreen(
                 }
             }
 
-            // Last 7 Days Sales Chart
+            // Daily Revenue Trend Chart (Vico powered by Room SaleEntity)
             item {
-                SectionHeader("Last 7 Days")
-                GroupCard {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        val maxBar = (last7Days.maxOfOrNull { it.totalCents } ?: 1L).coerceAtLeast(1L)
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(110.dp),
-                        ) {
-                            val barCount = last7Days.size
-                            val slot = size.width / barCount
-                            val barWidth = slot * 0.54f
-                            last7Days.forEachIndexed { i, point ->
-                                val frac = point.totalCents.toFloat() / maxBar.toFloat()
-                                val barHeight = (size.height - 8f) * frac.coerceAtLeast(0.05f)
-                                val left = i * slot + (slot - barWidth) / 2f
-                                val top = size.height - barHeight
-                                drawRoundRect(
-                                    color = if (point.totalCents > 0L) LoyGreen else Color(0xFFE0E0E0),
-                                    topLeft = Offset(left, top),
-                                    size = Size(barWidth, barHeight),
-                                    cornerRadius = CornerRadius(8f, 8f),
-                                )
-                            }
-                        }
-                        Row(Modifier.fillMaxWidth()) {
-                            last7Days.forEach { pt ->
-                                Text(
-                                    text = pt.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = LoyTextSecondary,
-                                    modifier = Modifier.weight(1f),
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        }
-                    }
-                }
+                SectionHeader("Daily Revenue Trend")
+                DailyRevenueTrendCard(
+                    points = revenueTrend,
+                    selectedDays = trendDays,
+                    currencySymbol = sym,
+                    onSelectDays = viewModel::setRevenueTrendDays,
+                )
             }
 
             // Recent Sales
@@ -521,5 +489,159 @@ fun DashboardScreen(
             onSelect = { viewModel.selectBranch(it.id) },
             onDismiss = { showBranchSheet = false },
         )
+    }
+}
+
+@Composable
+private fun DailyRevenueTrendCard(
+    points: List<DailyRevenuePoint>,
+    selectedDays: Int,
+    currencySymbol: String,
+    onSelectDays: (Int) -> Unit,
+) {
+    val totalWindowCents = remember(points) { points.sumOf { it.totalCents } }
+    val totalOrders = remember(points) { points.sumOf { it.salesCount } }
+    val avgDailyCents = if (points.isEmpty()) 0L else totalWindowCents / points.size
+
+    val modelProducer = remember { CartesianChartModelProducer() }
+    LaunchedEffect(points) {
+        if (points.isNotEmpty()) {
+            modelProducer.runTransaction {
+                lineSeries {
+                    series(points.map { it.revenueUnits })
+                }
+            }
+        }
+    }
+
+    val startAxisFormatter = remember(currencySymbol) {
+        CartesianValueFormatter { _, value, _ ->
+            formatCentsShort((value * 100.0).roundToLong(), currencySymbol)
+        }
+    }
+    val bottomAxisFormatter = remember(points) {
+        CartesianValueFormatter { _, value, _ ->
+            points.getOrNull(value.toInt())?.label ?: ""
+        }
+    }
+
+    GroupCard(modifier = Modifier.testTag("dashboard_revenue_trend_card")) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Last $selectedDays days",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = LoyTextPrimary,
+                    )
+                    Text(
+                        text = "$totalOrders completed ${if (totalOrders == 1) "sale" else "sales"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(7, 14, 30).forEach { days ->
+                        FilterChip(
+                            selected = selectedDays == days,
+                            onClick = { onSelectDays(days) },
+                            label = {
+                                Text(
+                                    text = "${days}D",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = LoyGreenLight,
+                                selectedLabelColor = LoyGreen,
+                            ),
+                            modifier = Modifier.testTag("dashboard_trend_${days}d"),
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatBlock(
+                    label = "${selectedDays}D Revenue",
+                    value = formatCents(totalWindowCents, currencySymbol),
+                    valueColor = LoyGreen,
+                    modifier = Modifier.weight(1f),
+                )
+                StatBlock(
+                    label = "Daily Average",
+                    value = formatCents(avgDailyCents, currencySymbol),
+                    valueColor = LoyInfo,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            if (points.isNotEmpty()) {
+                CartesianChartHost(
+                    chart = rememberCartesianChart(
+                        rememberLineCartesianLayer(
+                            lineProvider = LineCartesianLayer.LineProvider.series(
+                                LineCartesianLayer.rememberLine(
+                                    fill = LineCartesianLayer.LineFill.single(fill(LoyGreen)),
+                                    areaFill = LineCartesianLayer.AreaFill.single(
+                                        fill(
+                                            ShaderProvider.verticalGradient(
+                                                LoyGreen.copy(alpha = 0.28f).toArgb(),
+                                                Color.Transparent.toArgb(),
+                                            )
+                                        )
+                                    ),
+                                    pointConnector = LineCartesianLayer.PointConnector.cubic(0.4f),
+                                )
+                            )
+                        ),
+                        startAxis = VerticalAxis.rememberStart(
+                            valueFormatter = startAxisFormatter,
+                        ),
+                        bottomAxis = HorizontalAxis.rememberBottom(
+                            valueFormatter = bottomAxisFormatter,
+                        ),
+                    ),
+                    modelProducer = modelProducer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(188.dp)
+                        .testTag("dashboard_revenue_chart"),
+                )
+            }
+
+            if (totalWindowCents == 0L) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(LoyGreenLight.copy(alpha = 0.55f))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
+                        contentDescription = null,
+                        tint = LoyGreen,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = "No completed sales in this period yet. Complete an order in Checkout to populate the daily revenue trend.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                }
+            }
+        }
     }
 }
