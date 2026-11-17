@@ -33,6 +33,17 @@ function e(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES,
 
 $locked = is_file(LOCK_FILE);
 $reportOnly = isset($_POST['mode']) && $_POST['mode'] === 'report';
+
+// Pre-fill from an existing config.php (shipped in the bundle or from a previous run)
+$cfgExisting = null;
+if (is_file(__DIR__ . '/config.php')) {
+    try {
+        $maybe = require __DIR__ . '/config.php';
+        $cfgExisting = is_array($maybe) ? $maybe : null;
+    } catch (Throwable $e) {
+        $cfgExisting = null;
+    }
+}
 $results = [];   // [section, label, status, detail]
 $countsBefore = [];
 $countsAfter = [];
@@ -186,22 +197,39 @@ $done = false;
 $generatedToken = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $dbName   = trim((string)($_POST['db_name'] ?? ''));
-    $dbUser   = trim((string)($_POST['db_user'] ?? ''));
-    $dbPass   = (string)($_POST['db_pass'] ?? '');
-    $syncTok  = trim((string)($_POST['sync_token'] ?? ''));
+    // Form input wins; empty fields fall back to saved config.php, then defaults
+    $resolve = static function (string $field, string $fallback = '') use ($cfgExisting): string {
+        $v = trim((string)($_POST[$field] ?? ''));
+        if ($v !== '') {
+            return $v;
+        }
+        return (string)($cfgExisting[$field] ?? $fallback);
+    };
+    $dbHost  = $resolve('db_host', 'localhost');
+    $dbPort  = (int)($resolve('db_port', '3306') ?: '3306');
+    $dbName  = $resolve('db_name');
+    $dbUser  = $resolve('db_user');
+    $dbPass  = trim((string)($_POST['db_pass'] ?? '')) !== ''
+        ? (string)$_POST['db_pass']
+        : (string)($cfgExisting['db_pass'] ?? '');
+    $syncTok = $resolve('sync_token');
+    $tokenKept = false;
     $overwriteCfg = isset($_POST['overwrite_config']);
 
     try {
+        if ($dbName === '' || $dbUser === '' || $dbPass === '') {
+            throw new RuntimeException('Database name, user and password are required (no saved config.php found to fall back on).');
+        }
+
         // 1. Connect
         $pdo = new PDO(
-            "mysql:host=localhost;port=3306;dbname={$dbName};charset=utf8mb4",
+            "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4",
             $dbUser,
             $dbPass,
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10]
         );
         $version = $pdo->query('SELECT VERSION()')->fetchColumn();
-        $results[] = ['Connect', "MySQL/MariaDB {$version} via localhost", 'ok', "database `{$dbName}`"];
+        $results[] = ['Connect', "MySQL/MariaDB {$version} via {$dbHost}:{$dbPort}", 'ok', "database `{$dbName}`"];
 
         // 2. Snapshot existing data BEFORE touching anything
         $countsBefore = count_rows($pdo, $tables);
@@ -223,10 +251,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($syncTok === '') {
                 $syncTok = bin2hex(random_bytes(24));
                 $generatedToken = $syncTok;
+            } else {
+                $tokenKept = true;
             }
             $cfg = [
-                'db_host' => 'localhost',
-                'db_port' => 3306,
+                'db_host' => $dbHost,
+                'db_port' => $dbPort,
                 'db_name' => $dbName,
                 'db_user' => $dbUser,
                 'db_pass' => $dbPass,
@@ -236,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!is_file($cfgPath) || $overwriteCfg) {
                 file_put_contents($cfgPath, $php, LOCK_EX);
                 @chmod($cfgPath, 0640);
-                $results[] = ['config.php', is_file($cfgPath) && !$overwriteCfg ? 'written' : 'overwritten', 'ok', 'sync_token: ' . ($generatedToken ? 'auto-generated (shown below)' : 'kept from your input')];
+                $results[] = ['config.php', $overwriteCfg ? 'overwritten' : 'written', 'ok', 'sync_token: ' . ($generatedToken ? 'auto-generated (shown below)' : ($tokenKept ? 'kept from saved config.php' : 'kept from your input'))];
             } else {
                 $results[] = ['config.php', 'already exists — left untouched', 'warn', 'tick "Overwrite config.php" to replace it'];
             }
@@ -329,6 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  <?php if ($generatedToken !== ''): ?>
   <div class="token">New sync_token (copy it now, it is stored in config.php):<br><strong><?= e($generatedToken) ?></strong><br>
   <span class="note">Set this same value as <code>PLESK_SYNC_TOKEN</code> in the AI Studio Secrets panel so the LoyPOS app can authenticate.</span></div>
+ <?php elseif ($tokenKept): ?>
+  <div class="token">sync_token: kept unchanged from the <code>config.php</code> shipped in the bundle (no need to update <code>PLESK_SYNC_TOKEN</code> unless you typed a new one).</div>
  <?php endif; ?>
 
  <p class="note">Next steps: check <code>https://novelsapps.com.et/api/v1/health</code> with header
@@ -339,13 +371,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  <?php if ($locked): ?><p class="note" style="color:#facc15">install.lock exists — a previous migration already ran. To re-run, delete <code>httpdocs/api/v1/install.lock</code> in File Manager.</p><?php endif; ?>
  <form method="post">
   <div class="row">
-   <div><label>Database name</label><input type="text" name="db_name" placeholder="e.g. novelsap_loypos" value="<?= e($_POST['db_name'] ?? '') ?>" required></div>
-   <div><label>Database user</label><input type="text" name="db_user" placeholder="same as name on Plesk" value="<?= e($_POST['db_user'] ?? '') ?>" required></div>
+   <div><label>Database host</label><input type="text" name="db_host" value="<?= e($_POST['db_host'] ?? ($cfgExisting['db_host'] ?? 'localhost')) ?>"></div>
+   <div><label>Database port</label><input type="text" name="db_port" value="<?= e($_POST['db_port'] ?? (string)($cfgExisting['db_port'] ?? '3306')) ?>"></div>
   </div>
-  <label>Database password</label>
-  <input type="password" name="db_pass" placeholder="the one you set in Plesk → Add database" required>
-  <label>Sync token (leave empty to auto-generate a strong one)</label>
-  <input type="text" name="sync_token" placeholder="auto-generate" value="<?= e($_POST['sync_token'] ?? '') ?>">
+  <div class="row">
+   <div><label>Database name</label><input type="text" name="db_name" placeholder="e.g. loypos" value="<?= e($_POST['db_name'] ?? ($cfgExisting['db_name'] ?? '')) ?>" <?= empty($cfgExisting['db_name']) ? 'required' : '' ?>></div>
+   <div><label>Database user</label><input type="text" name="db_user" placeholder="as shown in Plesk" value="<?= e($_POST['db_user'] ?? ($cfgExisting['db_user'] ?? '')) ?>" <?= empty($cfgExisting['db_user']) ? 'required' : '' ?>></div>
+  </div>
+  <label>Database password<?= $cfgExisting && !empty($cfgExisting['db_pass']) ? ' (leave empty to reuse the saved one)' : '' ?></label>
+  <input type="password" name="db_pass" placeholder="<?= $cfgExisting && !empty($cfgExisting['db_pass']) ? '•••• saved in config.php ••••' : 'the one you set in Plesk → Add database' ?>" <?= empty($cfgExisting['db_pass']) ? 'required' : '' ?>>
+  <label>Sync token<?= $cfgExisting && !empty($cfgExisting['sync_token']) ? ' (leave empty to keep the saved one)' : ' (leave empty to auto-generate a strong one)' ?></label>
+  <input type="text" name="sync_token" placeholder="<?= $cfgExisting && !empty($cfgExisting['sync_token']) ? 'keep saved token' : 'auto-generate' ?>" value="<?= e($_POST['sync_token'] ?? '') ?>">
   <div class="check"><input type="checkbox" name="mode" value="report" id="ro"><label for="ro" style="margin:0">Report only — connect and show current data, change nothing</label></div>
   <div class="check"><input type="checkbox" name="overwrite_config" id="oc"><label for="oc" style="margin:0">Overwrite existing config.php (if present)</label></div>
   <button type="submit"><?= $locked ? 'Report current state' : 'Test connection &amp; run migration' ?></button>
