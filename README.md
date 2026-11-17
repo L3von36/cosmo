@@ -34,7 +34,7 @@ gradle assembleDebug
 The repository includes a GitHub Actions workflow (`.github/workflows/release.yml`) that builds both Debug and Release APKs (`loypos-debug.apk` and `loypos-release.apk`), uploads workflow artifacts, and publishes a GitHub Release:
 
 - **Triggers**: Pushes to `main` / `master` (auto-tags `v1.0.<run_number>`), version tag pushes (`v*`, e.g. `v1.0.0`), or manual `workflow_dispatch`.
-- **Signing**: Uses `debug.keystore.base64` by default, or optionally signs the release APK when `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` repository secrets are configured.
+- **Signing**: Debug builds use `debug.keystore` (`debugConfig`), while release builds use a dedicated `release` signing configuration (`release.keystore`, provisioned from `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` repository secrets when configured, or an isolated release keystore generated per CI run).
 
 ## License
 

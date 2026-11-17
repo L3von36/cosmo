@@ -29,6 +29,27 @@ android {
                 keyPassword = "android"
             }
         }
+        create("release") {
+            val releasePath = providers.gradleProperty("releaseStoreFile").orNull?.takeIf { it.isNotBlank() }
+                ?: System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+                ?: "${rootDir}/release.keystore"
+            val releaseKeystore = file(releasePath)
+            if (releaseKeystore.exists()) {
+                storeFile = releaseKeystore
+                storePassword = providers.gradleProperty("releaseStorePassword").orNull?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+                    ?: "loypos-release"
+                keyAlias = providers.gradleProperty("releaseKeyAlias").orNull?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ANDROID_KEY_ALIAS")?.takeIf { it.isNotBlank() }
+                    ?: "loypos-release"
+                keyPassword = providers.gradleProperty("releaseKeyPassword").orNull?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ANDROID_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+                    ?: "loypos-release"
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -44,8 +65,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val keystore = file("${rootDir}/debug.keystore")
-            if (keystore.exists()) {
+            val releasePath = providers.gradleProperty("releaseStoreFile").orNull?.takeIf { it.isNotBlank() }
+                ?: System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { it.isNotBlank() }
+                ?: "${rootDir}/release.keystore"
+            val releaseKeystore = file(releasePath)
+            val debugKeystore = file("${rootDir}/debug.keystore")
+            if (releaseKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (debugKeystore.exists()) {
                 signingConfig = signingConfigs.getByName("debugConfig")
             }
         }

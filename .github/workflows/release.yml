@@ -108,29 +108,7 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare signing keystore
-        shell: bash
-        run: |
-          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-            echo "Decoded debug.keystore from debug.keystore.base64"
-          fi
-          if [ ! -f debug.keystore ]; then
-            echo "debug.keystore is missing (debug.keystore.base64 not found)"
-            exit 1
-          fi
-
-      - name: Build Debug & Release APKs
-        shell: bash
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          VER_NAME="${TAG#v}"
-          gradle assembleDebug assembleRelease \
-            -PversionCode="${{ github.run_number }}" \
-            -PversionName="$VER_NAME" \
-            --no-daemon
-
-      - name: Sign, align & verify APKs
+      - name: Prepare signing keystores
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -138,60 +116,104 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         shell: bash
         run: |
-          mkdir -p release-apks
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name "apksigner" | sort -V | tail -n 1)
-          ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -type f -name "zipalign" | sort -V | tail -n 1)
-
-          DEBUG_APK=$(find app/build/outputs/apk/debug -maxdepth 1 -name "*.apk" | sort | head -n 1)
-          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            RAW_RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
-          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            RAW_RELEASE_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          else
-            RAW_RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 1 -name "*.apk" | sort | head -n 1)
+          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
+            echo "Decoded debug.keystore from debug.keystore.base64"
+          fi
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            echo "Generated fallback debug.keystore"
           fi
 
-          if [ -z "$DEBUG_APK" ] || [ -z "$RAW_RELEASE_APK" ]; then
-            echo "APK build output missing (debug='$DEBUG_APK', release='$RAW_RELEASE_APK')"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            if [ -z "$ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then
+              echo "::error::ANDROID_KEYSTORE_BASE64 is set, so ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS secrets must also be configured."
+              exit 1
+            fi
+            rm -f release.keystore
+            echo "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > release.keystore
+            echo "USING_CUSTOM_RELEASE_KEYSTORE=true" >> "$GITHUB_ENV"
+            echo "Decoded release.keystore from ANDROID_KEYSTORE_BASE64 secret"
+          elif [ -f release.keystore.base64 ]; then
+            rm -f release.keystore
+            tr -d '\r\n ' < release.keystore.base64 | base64 -d > release.keystore
+            echo "USING_CUSTOM_RELEASE_KEYSTORE=false" >> "$GITHUB_ENV"
+            echo "Decoded release.keystore from release.keystore.base64"
+          else
+            rm -f release.keystore
+            keytool -genkeypair -v \
+              -keystore release.keystore \
+              -storepass loypos-release \
+              -alias loypos-release \
+              -keypass loypos-release \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=LoyPOS Release,OU=POS,O=LoyPOS,C=US"
+            echo "USING_CUSTOM_RELEASE_KEYSTORE=false" >> "$GITHUB_ENV"
+            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set; generated an ephemeral release.keystore for this release. Set ANDROID_KEYSTORE_BASE64/PASSWORD/ALIAS secrets to enable seamless updates across releases."
+          fi
+
+      - name: Build Debug & Release APKs
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VER_NAME="${TAG#v}"
+          if [ "$USING_CUSTOM_RELEASE_KEYSTORE" = "true" ]; then
+            KEY_PASS="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+            gradle assembleDebug assembleRelease \
+              -PversionCode="${{ github.run_number }}" \
+              -PversionName="$VER_NAME" \
+              -PreleaseStoreFile="${PWD}/release.keystore" \
+              -PreleaseStorePassword="$ANDROID_KEYSTORE_PASSWORD" \
+              -PreleaseKeyAlias="$ANDROID_KEY_ALIAS" \
+              -PreleaseKeyPassword="$KEY_PASS" \
+              --no-daemon
+          else
+            gradle assembleDebug assembleRelease \
+              -PversionCode="${{ github.run_number }}" \
+              -PversionName="$VER_NAME" \
+              -PreleaseStoreFile="${PWD}/release.keystore" \
+              -PreleaseStorePassword="loypos-release" \
+              -PreleaseKeyAlias="loypos-release" \
+              -PreleaseKeyPassword="loypos-release" \
+              --no-daemon
+          fi
+          rm -f release.keystore
+
+      - name: Collect & verify APK artifacts
+        shell: bash
+        run: |
+          mkdir -p release-apks
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \( -type f -o -type l \) -name "apksigner" | sort -V | tail -n 1)
+          ZIPALIGN=$(find "$ANDROID_HOME/build-tools" \( -type f -o -type l \) -name "zipalign" | sort -V | tail -n 1)
+
+          DEBUG_APK=$(find app/build/outputs/apk/debug -maxdepth 1 -name "*.apk" | sort | head -n 1)
+          RELEASE_APK=$(find app/build/outputs/apk/release -maxdepth 1 -name "*.apk" | sort | head -n 1)
+
+          if [ -z "$DEBUG_APK" ] || [ -z "$RELEASE_APK" ]; then
+            echo "APK build output missing (debug='$DEBUG_APK', release='$RELEASE_APK')"
             exit 1
           fi
 
           cp "$DEBUG_APK" release-apks/loypos-debug.apk
-
-          # Ensure 16KB/4-byte alignment before final apksigner step
-          "$ZIPALIGN" -f -P 16 4 "$RAW_RELEASE_APK" release-apks/loypos-release-aligned.apk
-
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "$ANDROID_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > release.keystore
-            "$APKSIGNER" sign \
-              --v2-signing-enabled true \
-              --v3-signing-enabled true \
-              --v4-signing-enabled false \
-              --ks release.keystore \
-              --ks-pass "env:ANDROID_KEYSTORE_PASSWORD" \
-              --ks-key-alias "$ANDROID_KEY_ALIAS" \
-              --key-pass "env:ANDROID_KEY_PASSWORD" \
-              --out release-apks/loypos-release.apk \
-              release-apks/loypos-release-aligned.apk
-            rm -f release.keystore
-          else
-            echo "No custom release keystore secret set; signing release APK with debug.keystore (v2 + v3)."
-            "$APKSIGNER" sign \
-              --v2-signing-enabled true \
-              --v3-signing-enabled true \
-              --v4-signing-enabled false \
-              --ks debug.keystore \
-              --ks-pass pass:android \
-              --ks-key-alias androiddebugkey \
-              --key-pass pass:android \
-              --out release-apks/loypos-release.apk \
-              release-apks/loypos-release-aligned.apk
-          fi
-          rm -f release-apks/loypos-release-aligned.apk
+          cp "$RELEASE_APK" release-apks/loypos-release.apk
 
           echo "Verifying alignment & signatures..."
-          "$ZIPALIGN" -c -P 16 4 release-apks/loypos-debug.apk
-          "$ZIPALIGN" -c -P 16 4 release-apks/loypos-release.apk
+          "$ZIPALIGN" -c 4 release-apks/loypos-debug.apk
+          "$ZIPALIGN" -c 4 release-apks/loypos-release.apk
           "$APKSIGNER" verify --verbose --print-certs release-apks/loypos-debug.apk
           "$APKSIGNER" verify --verbose --print-certs release-apks/loypos-release.apk
           ls -lh release-apks/
