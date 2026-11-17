@@ -219,14 +219,14 @@ jobs:
           ls -lh release-apks/
 
       - name: Upload APK build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: loypos-apks
           path: release-apks/*.apk
           retention-days: 30
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: LoyPOS ${{ steps.version.outputs.tag }}
