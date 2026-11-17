@@ -221,13 +221,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new RuntimeException('Database name, user and password are required (no saved config.php found to fall back on).');
         }
 
-        // 1. Connect
-        $pdo = new PDO(
-            "mysql:host={$dbHost};port={$dbPort};dbname={$dbName};charset=utf8mb4",
-            $dbUser,
-            $dbPass,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10]
-        );
+        // 1. Connect — when host is "localhost" PHP uses the unix socket, which can
+        //    point at a different MySQL instance (or none) on multi-instance boxes.
+        //    If auth (1045), missing socket (2002) or unknown DB (1049) fails there,
+        //    retry over TCP via 127.0.0.1 before giving up.
+        $pdo = null;
+        $connectErr = null;
+        $candidates = $dbHost === 'localhost' ? ['localhost', '127.0.0.1'] : [$dbHost];
+        foreach ($candidates as $tryHost) {
+            try {
+                $pdo = new PDO(
+                    "mysql:host={$tryHost};port={$dbPort};dbname={$dbName};charset=utf8mb4",
+                    $dbUser,
+                    $dbPass,
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 10]
+                );
+                $dbHost = $tryHost;
+                break;
+            } catch (PDOException $pe) {
+                $connectErr = $pe;
+                $em = $pe->getMessage();
+                $retryable = stripos($em, '[1045]') !== false
+                    || stripos($em, '[2002]') !== false
+                    || stripos($em, '[1049]') !== false;
+                if (!$retryable || $tryHost === $candidates[count($candidates) - 1]) {
+                    throw $pe;
+                }
+            }
+        }
+        if (!$pdo instanceof PDO) {
+            throw $connectErr ?? new RuntimeException('Could not connect to MySQL.');
+        }
         $version = $pdo->query('SELECT VERSION()')->fetchColumn();
         $results[] = ['Connect', "MySQL/MariaDB {$version} via {$dbHost}:{$dbPort}", 'ok', "database `{$dbName}`"];
 
@@ -304,7 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg .= ' → create the database first: Plesk → Databases → Add database';
         }
         if (stripos($msg, '1045') !== false || stripos($msg, 'Access denied') !== false) {
-            $msg .= ' → check db_user / db_pass in Plesk → Databases → your DB → users';
+            $msg .= ' → Fix steps: 1) Plesk → Databases → open your DB and check the EXACT database name and user name shown there (Plesk often prefixes them, e.g. novelsap_loypos / novelsap_novel) — type exactly those into the form. 2) Click the DB user → Change password, set it again carefully, type it into the form and tick "Overwrite config.php". 3) Try Database host 10.180.50.142 (the DB server address shown in Plesk) instead of localhost.';
         }
         $results[] = ['Error', $msg, 'err', 'nothing was changed if this happened before migration steps'];
         $done = true;
