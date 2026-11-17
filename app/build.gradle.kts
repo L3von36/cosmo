@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.secrets)
 }
 
 android {
@@ -17,6 +18,7 @@ android {
         val propVersionName = providers.gradleProperty("versionName").orNull?.takeIf { it.isNotBlank() }
         versionCode = propVersionCode ?: 1
         versionName = propVersionName ?: "1.0.0"
+        buildConfigField("String", "PLESK_API_BASE_URL", "\"https://novelsapps.com.et/api/v1\"")
     }
 
     signingConfigs {
@@ -60,7 +62,8 @@ android {
             }
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -89,6 +92,11 @@ android {
     }
 }
 
+secrets {
+    propertiesFileName = ".env"
+    defaultPropertiesFileName = ".env.example"
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -110,6 +118,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.vico.compose.m3)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.security.crypto)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

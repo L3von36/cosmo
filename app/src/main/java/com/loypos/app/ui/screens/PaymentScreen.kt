@@ -1,7 +1,6 @@
 package com.loypos.app.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -54,6 +53,8 @@ import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.TransactionViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.CurrencyNumPad
+import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.LocalLoyWindowSize
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -64,6 +65,7 @@ import com.loypos.app.ui.theme.LoySurfaceVariant
 import com.loypos.app.ui.theme.LoyTextPrimary
 import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.TabularMoneyStyle
+import com.loypos.app.ui.theme.accessibleTouchTarget
 import kotlin.math.ceil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,6 +83,8 @@ fun PaymentScreen(
     val sym = data.settings.currencySymbol
     val totalCents = totals.totalCents
     val selectedCustomer = data.customers.firstOrNull { it.id == cartSession.customerId }
+    val windowSize = LocalLoyWindowSize.current
+    val metrics = LocalLoyMetrics.current
 
     var paymentMethod by remember { mutableStateOf("cash") }
     var tenderedText by remember(totalCents) {
@@ -105,13 +109,152 @@ fun PaymentScreen(
         listOf(exact, next50, next100).distinct().filter { it >= exact }.take(3)
     }
 
+    val onCompletePayment: () -> Unit = {
+        transactionViewModel.finalizeSale(
+            paymentType = paymentMethod,
+            paidCents = paidCents,
+            settings = data.settings,
+            customer = selectedCustomer,
+            branchId = session.activeBranchId,
+            cashier = session.currentUser,
+        ) {
+            viewModel.refreshHealthAndBackups()
+            onPaymentCompleted()
+        }
+    }
+
+    val totalCard: @Composable () -> Unit = {
+        Surface(
+            shape = RoundedCornerShape(11.dp),
+            color = LoySurface,
+            border = BorderStroke(1.dp, LoyBorder),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(metrics.cardPadding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Total due", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = formatCents(totalCents, sym),
+                    style = TabularMoneyStyle.merge(MaterialTheme.typography.displaySmall),
+                    fontWeight = FontWeight.Bold,
+                    color = LoyTextPrimary,
+                )
+                if (totals.discountCents > 0L || totals.taxCents > 0L) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = buildString {
+                            append("Subtotal ${formatCents(totals.subtotalCents, sym)}")
+                            if (totals.discountCents > 0L) append(" · Disc -${formatCents(totals.discountCents, sym)}")
+                            if (totals.taxCents > 0L) append(" · Tax ${formatCents(totals.taxCents, sym)}")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                }
+            }
+        }
+    }
+
+    val methodSelectorRow: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(metrics.itemGap),
+        ) {
+            MethodCard(
+                selected = paymentMethod == "cash",
+                icon = Icons.Outlined.Payments,
+                label = "Cash",
+                onClick = { paymentMethod = "cash" },
+                modifier = Modifier.weight(1f).testTag("method_cash"),
+            )
+            MethodCard(
+                selected = paymentMethod == "card",
+                icon = Icons.Outlined.CreditCard,
+                label = "Card",
+                onClick = { paymentMethod = "card" },
+                modifier = Modifier.weight(1f).testTag("method_card"),
+            )
+        }
+    }
+
+    val tenderStatusRow: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(metrics.itemGap),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = LoySurface,
+                border = BorderStroke(1.dp, LoyGreen),
+                modifier = Modifier.weight(1f),
+            ) {
+                Column(modifier = Modifier.padding(metrics.cardPadding)) {
+                    Text("Cash received", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = "$sym${tenderedText.ifEmpty { "0" }}",
+                        style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (diffCents >= 0L) LoyGreenLight else LoySurfaceVariant,
+                border = BorderStroke(1.dp, if (diffCents >= 0L) LoyGreen else LoyBorder),
+                modifier = Modifier.weight(1f),
+            ) {
+                Column(modifier = Modifier.padding(metrics.cardPadding)) {
+                    Text(
+                        if (diffCents >= 0L) "Change" else "Remaining",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (diffCents >= 0L) LoyGreen else LoyError,
+                    )
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        text = formatCents(kotlin.math.abs(diffCents), sym),
+                        style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        color = if (diffCents >= 0L) LoyGreen else LoyError,
+                    )
+                }
+            }
+        }
+    }
+
+    val chargeSection: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+            if (!canCharge && paymentMethod == "cash") {
+                Text(
+                    text = "Enter at least ${formatCents(totalCents, sym)} to complete cash payment.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LoyError,
+                )
+            }
+            Button(
+                onClick = onCompletePayment,
+                enabled = canCharge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = metrics.minTouchTarget)
+                    .testTag("payment_charge_button"),
+            ) {
+                Text("Charge ${formatCents(totalCents, sym)}", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Payment", fontWeight = FontWeight.Bold) },
+                expandedHeight = metrics.topBarHeight,
+                title = { Text("Payment", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onBack, modifier = Modifier.accessibleTouchTarget(metrics.minTouchTarget)) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", modifier = Modifier.size(20.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
@@ -125,188 +268,142 @@ fun PaymentScreen(
                 .padding(padding)
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(metrics.screenPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Column(
-                modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // Total Card
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = LoySurface,
-                    border = BorderStroke(1.dp, LoyBorder),
-                    modifier = Modifier.fillMaxWidth(),
+            if (!windowSize.isCompact) {
+                Row(
+                    modifier = Modifier.widthIn(max = 920.dp).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(metrics.screenPadding),
+                    verticalAlignment = Alignment.Top,
                 ) {
                     Column(
-                        modifier = Modifier.padding(18.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionGap),
                     ) {
-                        Text("Total due", style = MaterialTheme.typography.bodyMedium, color = LoyTextSecondary)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = formatCents(totalCents, sym),
-                            style = TabularMoneyStyle.merge(MaterialTheme.typography.displaySmall),
-                            fontWeight = FontWeight.Bold,
-                            color = LoyTextPrimary,
-                        )
-                        if (totals.discountCents > 0L || totals.taxCents > 0L) {
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = buildString {
-                                    append("Subtotal ${formatCents(totals.subtotalCents, sym)}")
-                                    if (totals.discountCents > 0L) append(" · Disc -${formatCents(totals.discountCents, sym)}")
-                                    if (totals.taxCents > 0L) append(" · Tax ${formatCents(totals.taxCents, sym)}")
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = LoyTextSecondary,
-                            )
+                        totalCard()
+                        methodSelectorRow()
+                        if (paymentMethod == "cash") {
+                            tenderStatusRow()
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = LoySurface,
+                                border = BorderStroke(1.dp, LoyBorder),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    text = "Confirm card terminal approval for ${formatCents(totalCents, sym)} before pressing Charge.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = LoyTextSecondary,
+                                    modifier = Modifier.padding(metrics.cardPadding),
+                                )
+                            }
                         }
                     }
-                }
-
-                // Payment method cards
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    MethodCard(
-                        selected = paymentMethod == "cash",
-                        icon = Icons.Outlined.Payments,
-                        label = "Cash",
-                        onClick = { paymentMethod = "cash" },
-                        modifier = Modifier.weight(1f).testTag("method_cash"),
-                    )
-                    MethodCard(
-                        selected = paymentMethod == "card",
-                        icon = Icons.Outlined.CreditCard,
-                        label = "Card",
-                        onClick = { paymentMethod = "card" },
-                        modifier = Modifier.weight(1f).testTag("method_card"),
-                    )
-                }
-
-                if (paymentMethod == "cash") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(metrics.sectionGap),
                     ) {
+                        if (paymentMethod == "cash") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                quickAmounts.forEach { amt ->
+                                    FilterChip(
+                                        selected = paidCents == amt,
+                                        onClick = {
+                                            tenderedText = if (amt % 100L == 0L) (amt / 100L).toString() else "%.2f".format(amt / 100.0)
+                                        },
+                                        label = { Text(formatCents(amt, sym), style = MaterialTheme.typography.labelMedium) },
+                                        modifier = Modifier.height(metrics.chipHeight),
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { tenderedText = "" },
+                                    modifier = Modifier.heightIn(min = metrics.minTouchTarget).testTag("payment_clear_cash"),
+                                ) {
+                                    Text("Clear")
+                                }
+                            }
+                            CurrencyNumPad(
+                                onKey = { d ->
+                                    if (d == "." && tenderedText.contains(".")) return@CurrencyNumPad
+                                    tenderedText = if (tenderedText == "0" && d != ".") d else tenderedText + d
+                                },
+                                onBackspace = {
+                                    if (tenderedText.isNotEmpty()) tenderedText = tenderedText.dropLast(1)
+                                },
+                                onClear = { tenderedText = "" },
+                                allowDecimal = true,
+                            )
+                        }
+                        chargeSection()
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(metrics.sectionGap),
+                ) {
+                    totalCard()
+                    methodSelectorRow()
+                    if (paymentMethod == "cash") {
+                        tenderStatusRow()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            quickAmounts.forEach { amt ->
+                                FilterChip(
+                                    selected = paidCents == amt,
+                                    onClick = {
+                                        tenderedText = if (amt % 100L == 0L) (amt / 100L).toString() else "%.2f".format(amt / 100.0)
+                                    },
+                                    label = { Text(formatCents(amt, sym), style = MaterialTheme.typography.labelMedium) },
+                                    modifier = Modifier.height(metrics.chipHeight),
+                                )
+                            }
+                            Spacer(Modifier.weight(1f))
+                            TextButton(
+                                onClick = { tenderedText = "" },
+                                modifier = Modifier.heightIn(min = metrics.minTouchTarget).testTag("payment_clear_cash"),
+                            ) {
+                                Text("Clear")
+                            }
+                        }
+
+                        CurrencyNumPad(
+                            onKey = { d ->
+                                if (d == "." && tenderedText.contains(".")) return@CurrencyNumPad
+                                tenderedText = if (tenderedText == "0" && d != ".") d else tenderedText + d
+                            },
+                            onBackspace = {
+                                if (tenderedText.isNotEmpty()) tenderedText = tenderedText.dropLast(1)
+                            },
+                            onClear = { tenderedText = "" },
+                            allowDecimal = true,
+                        )
+                    } else {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = LoySurface,
-                            border = BorderStroke(1.dp, LoyGreen),
-                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, LoyBorder),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text("Cash received", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = "$sym${tenderedText.ifEmpty { "0" }}",
-                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (diffCents >= 0L) LoyGreenLight else LoySurfaceVariant,
-                            border = BorderStroke(1.dp, if (diffCents >= 0L) LoyGreen else LoyBorder),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(
-                                    if (diffCents >= 0L) "Change" else "Remaining",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (diffCents >= 0L) LoyGreen else LoyError,
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = formatCents(kotlin.math.abs(diffCents), sym),
-                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (diffCents >= 0L) LoyGreen else LoyError,
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        quickAmounts.forEach { amt ->
-                            FilterChip(
-                                selected = paidCents == amt,
-                                onClick = {
-                                    tenderedText = if (amt % 100L == 0L) (amt / 100L).toString() else "%.2f".format(amt / 100.0)
-                                },
-                                label = { Text(formatCents(amt, sym)) },
+                            Text(
+                                text = "Confirm card terminal approval for ${formatCents(totalCents, sym)} before pressing Charge.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LoyTextSecondary,
+                                modifier = Modifier.padding(metrics.cardPadding),
                             )
                         }
-                        Spacer(Modifier.weight(1f))
-                        TextButton(onClick = { tenderedText = "" }, modifier = Modifier.testTag("payment_clear_cash")) {
-                            Text("Clear")
-                        }
                     }
-
-                    CurrencyNumPad(
-                        onKey = { d ->
-                            if (d == "." && tenderedText.contains(".")) return@CurrencyNumPad
-                            tenderedText = if (tenderedText == "0" && d != ".") d else tenderedText + d
-                        },
-                        onBackspace = {
-                            if (tenderedText.isNotEmpty()) tenderedText = tenderedText.dropLast(1)
-                        },
-                        onClear = { tenderedText = "" },
-                        allowDecimal = true,
-                    )
-                } else {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = LoySurface,
-                        border = BorderStroke(1.dp, LoyBorder),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = "Confirm card terminal approval for ${formatCents(totalCents, sym)} before pressing Charge.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = LoyTextSecondary,
-                            modifier = Modifier.padding(16.dp),
-                        )
-                    }
-                }
-
-                if (!canCharge && paymentMethod == "cash") {
-                    Text(
-                        text = "Enter at least ${formatCents(totalCents, sym)} to complete cash payment.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LoyError,
-                    )
-                }
-
-                Button(
-                    onClick = {
-                        transactionViewModel.finalizeSale(
-                            paymentType = paymentMethod,
-                            paidCents = paidCents,
-                            settings = data.settings,
-                            customer = selectedCustomer,
-                            branchId = session.activeBranchId,
-                            cashier = session.currentUser,
-                        ) {
-                            viewModel.refreshHealthAndBackups()
-                            onPaymentCompleted()
-                        }
-                    },
-                    enabled = canCharge,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("payment_charge_button"),
-                ) {
-                    Text("Charge ${formatCents(totalCents, sym)}", fontWeight = FontWeight.Bold)
+                    chargeSection()
                 }
             }
         }
@@ -321,24 +418,26 @@ private fun MethodCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val metrics = LocalLoyMetrics.current
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         color = if (selected) LoyGreenLight else LoySurface,
         border = BorderStroke(1.5.dp, if (selected) LoyGreen else LoyBorder),
         modifier = modifier
-            .height(56.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .heightIn(min = metrics.minTouchTarget)
+            .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick),
     ) {
         Row(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Icon(icon, contentDescription = null, tint = if (selected) LoyGreen else LoyTextSecondary)
-            Spacer(Modifier.width(8.dp))
+            Icon(icon, contentDescription = null, tint = if (selected) LoyGreen else LoyTextSecondary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
             Text(
                 label,
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = if (selected) LoyGreen else LoyTextPrimary,
             )

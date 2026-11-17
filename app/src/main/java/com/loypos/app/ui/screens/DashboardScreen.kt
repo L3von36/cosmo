@@ -92,6 +92,8 @@ import com.loypos.app.ui.components.PillBadge
 import com.loypos.app.ui.components.SectionHeader
 import com.loypos.app.ui.components.StatBlock
 import com.loypos.app.ui.components.TopSyncIconButton
+import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.LocalLoyWindowSize
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -104,6 +106,7 @@ import com.loypos.app.ui.theme.LoyTextPrimary
 import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.LoyWarning
 import com.loypos.app.ui.theme.TabularMoneyStyle
+import com.loypos.app.ui.theme.accessibleTouchTarget
 
 private data class QuickActionItem(
     val label: String,
@@ -176,8 +179,12 @@ fun DashboardScreen(
         )
     }
 
+    val windowSize = LocalLoyWindowSize.current
+    val metrics = LocalLoyMetrics.current
+
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
+            expandedHeight = metrics.topBarHeight,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
             title = {
                 Column {
@@ -201,12 +208,12 @@ fun DashboardScreen(
                                 Icons.Outlined.Storefront,
                                 contentDescription = "Active branch",
                                 tint = LoyGreen,
-                                modifier = Modifier.size(13.dp),
+                                modifier = Modifier.size(12.dp),
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(3.dp))
                             Text(
                                 text = activeBranch.name,
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = LoyGreen,
                                 fontWeight = FontWeight.Medium,
                             )
@@ -217,12 +224,15 @@ fun DashboardScreen(
             actions = {
                 IconButton(
                     onClick = { viewModel.openBackOffice() },
-                    modifier = Modifier.size(48.dp).testTag("dashboard_open_backoffice_button"),
+                    modifier = Modifier
+                        .accessibleTouchTarget(metrics.minTouchTarget)
+                        .testTag("dashboard_open_backoffice_button"),
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.AdminPanelSettings,
                         contentDescription = "Open Back Office",
                         tint = LoyGreen,
+                        modifier = Modifier.size(19.dp),
                     )
                 }
                 TopSyncIconButton(
@@ -235,52 +245,79 @@ fun DashboardScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(metrics.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionGap),
         ) {
             // Today's Overview
             item {
                 SectionHeader("Today's Overview")
                 GroupCard {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(metrics.cardPadding),
+                        verticalArrangement = Arrangement.spacedBy(metrics.itemGap),
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatBlock(
-                                label = "Net sales",
-                                value = formatCents(todaySummary.netCents, sym),
-                                valueColor = LoyGreen,
-                                modifier = Modifier.weight(1f),
-                            )
-                            StatBlock(
-                                label = "Sales / Refunds",
-                                value = "${todaySummary.salesCount} / ${todaySummary.refundsCount}",
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatBlock(
-                                label = "Avg ticket",
-                                value = formatCents(avgTicketCents, sym),
-                                modifier = Modifier.weight(1f),
-                            )
-                            StatBlock(
-                                label = "Cash / Card",
-                                value = "${formatCents(todaySummary.cashCents, sym)} / ${formatCents(todaySummary.cardCents, sym)}",
-                                valueColor = LoyInfo,
-                                modifier = Modifier.weight(1f),
-                            )
+                        if (windowSize.isCompact) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                                StatBlock(
+                                    label = "Net sales",
+                                    value = formatCents(todaySummary.netCents, sym),
+                                    valueColor = LoyGreen,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Sales / Refunds",
+                                    value = "${todaySummary.salesCount} / ${todaySummary.refundsCount}",
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                                StatBlock(
+                                    label = "Avg ticket",
+                                    value = formatCents(avgTicketCents, sym),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Cash / Card",
+                                    value = "${formatCents(todaySummary.cashCents, sym)} / ${formatCents(todaySummary.cardCents, sym)}",
+                                    valueColor = LoyInfo,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                                StatBlock(
+                                    label = "Net sales",
+                                    value = formatCents(todaySummary.netCents, sym),
+                                    valueColor = LoyGreen,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Sales / Refunds",
+                                    value = "${todaySummary.salesCount} / ${todaySummary.refundsCount}",
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Avg ticket",
+                                    value = formatCents(avgTicketCents, sym),
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Cash / Card",
+                                    value = "${formatCents(todaySummary.cashCents, sym)} / ${formatCents(todaySummary.cardCents, sym)}",
+                                    valueColor = LoyInfo,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
                         Button(
                             onClick = onNavigateToCheckout,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
+                                .heightIn(min = metrics.minTouchTarget)
                                 .testTag("dashboard_start_checkout_button"),
                         ) {
-                            Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(6.dp))
                             Text("Open Checkout Register", fontWeight = FontWeight.SemiBold)
                         }
                     }
@@ -291,30 +328,30 @@ fun DashboardScreen(
             item {
                 SectionHeader("Quick Actions")
                 LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(quickActions, key = { it.tag }) { action ->
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(11.dp),
                             color = LoySurface,
                             border = BorderStroke(1.dp, LoyBorder),
                             modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
+                                .clip(RoundedCornerShape(11.dp))
                                 .clickable(onClick = action.onClick)
                                 .testTag(action.tag),
                         ) {
                             Column(
                                 modifier = Modifier
-                                    .width(96.dp)
-                                    .heightIn(min = 84.dp)
-                                    .padding(horizontal = 10.dp, vertical = 12.dp),
+                                    .width(76.dp)
+                                    .heightIn(min = 66.dp)
+                                    .padding(horizontal = 6.dp, vertical = 8.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .size(30.dp)
+                                        .clip(RoundedCornerShape(8.dp))
                                         .background(LoyGreenLight),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -322,13 +359,13 @@ fun DashboardScreen(
                                         imageVector = action.icon,
                                         contentDescription = action.label,
                                         tint = LoyGreen,
-                                        modifier = Modifier.size(20.dp),
+                                        modifier = Modifier.size(17.dp),
                                     )
                                 }
-                                Spacer(Modifier.height(6.dp))
+                                Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = action.label,
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = LoyTextPrimary,
                                     maxLines = 1,
@@ -340,77 +377,160 @@ fun DashboardScreen(
                 }
             }
 
-            // Inventory Alerts
-            item {
-                SectionHeader("Inventory Alerts")
-                GroupCard {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+            // Inventory Alerts + Trend Card (side-by-side on Expanded screens)
+            if (windowSize.isExpanded) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(metrics.sectionGap),
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (outOfStockCount + lowStockCount > 0) Color(0xFFFFF3E0) else LoyGreenLight),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = if (outOfStockCount + lowStockCount > 0) Icons.Outlined.WarningAmber else Icons.Outlined.Inventory2,
-                                    contentDescription = "Inventory status",
-                                    tint = if (outOfStockCount + lowStockCount > 0) LoyWarning else LoyGreen,
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "${data.items.size} products · ${data.categories.size} categories",
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = LoyTextPrimary,
-                                )
-                                Text(
-                                    text = "$outOfStockCount out of stock · $lowStockCount low stock",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (outOfStockCount > 0) LoyError else LoyTextSecondary,
-                                )
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            SectionHeader("Daily Revenue Trend")
+                            DailyRevenueTrendCard(
+                                points = revenueTrend,
+                                selectedDays = trendDays,
+                                currencySymbol = sym,
+                                onSelectDays = viewModel::setRevenueTrendDays,
+                            )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = onNavigateToInventory,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .testTag("dashboard_manage_catalog_button"),
-                            ) {
-                                Text("Catalog", maxLines = 1)
-                            }
-                            OutlinedButton(
-                                onClick = onNavigateToStock,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .testTag("dashboard_adjust_stock_button"),
-                            ) {
-                                Text("Adjust Stock", maxLines = 1)
+                        Column(modifier = Modifier.weight(1f)) {
+                            SectionHeader("Inventory Alerts")
+                            GroupCard {
+                                Column(
+                                    modifier = Modifier.padding(metrics.cardPadding),
+                                    verticalArrangement = Arrangement.spacedBy(metrics.itemGap),
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (outOfStockCount + lowStockCount > 0) Color(0xFFFFF3E0) else LoyGreenLight),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = if (outOfStockCount + lowStockCount > 0) Icons.Outlined.WarningAmber else Icons.Outlined.Inventory2,
+                                                contentDescription = "Inventory status",
+                                                tint = if (outOfStockCount + lowStockCount > 0) LoyWarning else LoyGreen,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${data.items.size} products · ${data.categories.size} categories",
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = LoyTextPrimary,
+                                            )
+                                            Text(
+                                                text = "$outOfStockCount out of stock · $lowStockCount low stock",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (outOfStockCount > 0) LoyError else LoyTextSecondary,
+                                            )
+                                        }
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = onNavigateToInventory,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .heightIn(min = metrics.minTouchTarget)
+                                                .testTag("dashboard_manage_catalog_button"),
+                                        ) {
+                                            Text("Catalog", maxLines = 1)
+                                        }
+                                        OutlinedButton(
+                                            onClick = onNavigateToStock,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .heightIn(min = metrics.minTouchTarget)
+                                                .testTag("dashboard_adjust_stock_button"),
+                                        ) {
+                                            Text("Adjust Stock", maxLines = 1)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
+            } else {
+                // Inventory Alerts
+                item {
+                    SectionHeader("Inventory Alerts")
+                    GroupCard {
+                        Column(
+                            modifier = Modifier.padding(metrics.cardPadding),
+                            verticalArrangement = Arrangement.spacedBy(metrics.itemGap),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (outOfStockCount + lowStockCount > 0) Color(0xFFFFF3E0) else LoyGreenLight),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = if (outOfStockCount + lowStockCount > 0) Icons.Outlined.WarningAmber else Icons.Outlined.Inventory2,
+                                        contentDescription = "Inventory status",
+                                        tint = if (outOfStockCount + lowStockCount > 0) LoyWarning else LoyGreen,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "${data.items.size} products · ${data.categories.size} categories",
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = LoyTextPrimary,
+                                    )
+                                    Text(
+                                        text = "$outOfStockCount out of stock · $lowStockCount low stock",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (outOfStockCount > 0) LoyError else LoyTextSecondary,
+                                    )
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = onNavigateToInventory,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = metrics.minTouchTarget)
+                                        .testTag("dashboard_manage_catalog_button"),
+                                ) {
+                                    Text("Catalog", maxLines = 1)
+                                }
+                                OutlinedButton(
+                                    onClick = onNavigateToStock,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = metrics.minTouchTarget)
+                                        .testTag("dashboard_adjust_stock_button"),
+                                ) {
+                                    Text("Adjust Stock", maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
 
-            // Daily Revenue Trend Chart (Vico powered by Room SaleEntity)
-            item {
-                SectionHeader("Daily Revenue Trend")
-                DailyRevenueTrendCard(
-                    points = revenueTrend,
-                    selectedDays = trendDays,
-                    currencySymbol = sym,
-                    onSelectDays = viewModel::setRevenueTrendDays,
-                )
+                // Daily Revenue Trend Chart (Vico powered by Room SaleEntity)
+                item {
+                    SectionHeader("Daily Revenue Trend")
+                    DailyRevenueTrendCard(
+                        points = revenueTrend,
+                        selectedDays = trendDays,
+                        currencySymbol = sym,
+                        onSelectDays = viewModel::setRevenueTrendDays,
+                    )
+                }
             }
 
             // Recent Sales
@@ -424,7 +544,7 @@ fun DashboardScreen(
                     if (branchReceipts.isNotEmpty()) {
                         TextButton(
                             onClick = onNavigateToReceipts,
-                            modifier = Modifier.heightIn(min = 48.dp),
+                            modifier = Modifier.heightIn(min = metrics.minTouchTarget),
                         ) {
                             Text("View all")
                         }
@@ -448,9 +568,9 @@ fun DashboardScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(min = 56.dp)
+                                        .heightIn(min = 46.dp)
                                         .clickable { onNavigateToReceiptDetail(r.id) }
-                                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
                                         .testTag("dashboard_recent_sale_${r.id}"),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -489,6 +609,7 @@ fun DashboardScreen(
                                         Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                                         contentDescription = "Open receipt",
                                         tint = LoyTextSecondary,
+                                        modifier = Modifier.size(18.dp),
                                     )
                                 }
                             }
@@ -544,8 +665,8 @@ private fun DailyRevenueTrendCard(
 
     GroupCard(modifier = Modifier.testTag("dashboard_revenue_trend_card")) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -565,7 +686,7 @@ private fun DailyRevenueTrendCard(
                         color = LoyTextSecondary,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     listOf(7, 14, 30).forEach { days ->
                         FilterChip(
                             selected = selectedDays == days,
@@ -573,7 +694,7 @@ private fun DailyRevenueTrendCard(
                             label = {
                                 Text(
                                     text = "${days}D",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             },
@@ -581,13 +702,13 @@ private fun DailyRevenueTrendCard(
                                 selectedContainerColor = LoyGreenLight,
                                 selectedLabelColor = LoyGreen,
                             ),
-                            modifier = Modifier.testTag("dashboard_trend_${days}d"),
+                            modifier = Modifier.height(28.dp).testTag("dashboard_trend_${days}d"),
                         )
                     }
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 StatBlock(
                     label = "${selectedDays}D Revenue",
                     value = formatCents(totalWindowCents, currencySymbol),
@@ -631,7 +752,7 @@ private fun DailyRevenueTrendCard(
                     modelProducer = modelProducer,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(188.dp)
+                        .height(148.dp)
                         .testTag("dashboard_revenue_chart"),
                 )
             }

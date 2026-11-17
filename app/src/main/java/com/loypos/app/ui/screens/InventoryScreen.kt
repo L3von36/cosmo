@@ -33,14 +33,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Category
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ImportExport
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Remove
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
@@ -49,7 +47,6 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +56,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -95,6 +93,7 @@ import com.loypos.app.data.local.ProductEntity
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
+import com.loypos.app.ui.components.CompactSearchField
 import com.loypos.app.ui.components.EmptyState
 import com.loypos.app.ui.components.GroupCard
 import com.loypos.app.ui.components.InventoryCsvSheet
@@ -145,24 +144,38 @@ fun InventoryScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Inventory", fontWeight = FontWeight.Bold) },
+                    expandedHeight = 50.dp,
+                    title = {
+                        Text(
+                            "Inventory",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
                     actions = {
                         IconButton(
                             onClick = { showCsvSheet = true },
-                            modifier = Modifier.size(48.dp).testTag("inventory_csv_button"),
+                            modifier = Modifier.size(42.dp).testTag("inventory_csv_button"),
                         ) {
                             Icon(
                                 Icons.Outlined.ImportExport,
                                 contentDescription = "CSV Import and Export",
                                 tint = LoyGreen,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                         TextButton(
                             onClick = onNavigateToStock,
-                            modifier = Modifier.heightIn(min = 48.dp).testTag("inventory_stock_button"),
+                            modifier = Modifier.heightIn(min = 40.dp).testTag("inventory_stock_button"),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
                         ) {
-                            Text("Stock", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Stock",
+                                color = LoyGreen,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                            )
                         }
                         TopSyncIconButton(syncing = session.syncing, onClick = { viewModel.syncCloud() })
                     },
@@ -171,24 +184,27 @@ fun InventoryScreen(
                     Tab(
                         selected = tabIndex == 0,
                         onClick = { tabIndex = 0 },
-                        text = { Text("Products (${data.items.size})") },
+                        modifier = Modifier.height(38.dp),
+                        text = { Text("Products (${data.items.size})", style = MaterialTheme.typography.labelMedium) },
                     )
                     Tab(
                         selected = tabIndex == 1,
                         onClick = { tabIndex = 1 },
-                        text = { Text("Categories (${data.categories.size})") },
+                        modifier = Modifier.height(38.dp),
+                        text = { Text("Categories (${data.categories.size})", style = MaterialTheme.typography.labelMedium) },
                     )
                     Tab(
                         selected = tabIndex == 2,
                         onClick = { tabIndex = 2 },
-                        text = { Text("Discounts") },
+                        modifier = Modifier.height(38.dp),
+                        text = { Text("Discounts", style = MaterialTheme.typography.labelMedium) },
                     )
                 }
             }
         },
         floatingActionButton = {
             if (tabIndex == 0 || tabIndex == 1) {
-                FloatingActionButton(
+                SmallFloatingActionButton(
                     onClick = {
                         if (tabIndex == 0) {
                             isCreatingItem = true
@@ -216,6 +232,7 @@ fun InventoryScreen(
                     Icon(
                         Icons.Outlined.Add,
                         contentDescription = if (tabIndex == 0) "New product" else "New category",
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }
@@ -225,35 +242,27 @@ fun InventoryScreen(
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (tabIndex) {
                 0 -> {
-                    OutlinedTextField(
-                        value = search,
-                        onValueChange = { viewModel.setInventorySearch(it) },
-                        placeholder = { Text("Search by product name or SKU") },
-                        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = "Search") },
-                        trailingIcon = {
-                            if (search.isNotEmpty()) {
-                                IconButton(
-                                    onClick = { viewModel.setInventorySearch("") },
-                                    modifier = Modifier.size(48.dp).testTag("inventory_search_clear"),
-                                ) {
-                                    Icon(Icons.Outlined.Close, contentDescription = "Clear search")
-                                }
-                            }
-                        },
-                        singleLine = true,
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(LoySurface)
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                            .testTag("inventory_search_input"),
-                    )
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        CompactSearchField(
+                            value = search,
+                            onValueChange = { viewModel.setInventorySearch(it) },
+                            placeholder = "Search by product name or SKU",
+                            inputTestTag = "inventory_search_input",
+                            clearTestTag = "inventory_search_clear",
+                        )
+                    }
                     LazyRow(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(LoySurface)
-                            .padding(bottom = 10.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            .padding(bottom = 7.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         item {
                             FilterChip(
@@ -262,7 +271,8 @@ fun InventoryScreen(
                                     lowStockOnly = false
                                     selectedCategoryFilter = null
                                 },
-                                label = { Text("All") },
+                                label = { Text("All", style = MaterialTheme.typography.labelMedium) },
+                                modifier = Modifier.height(30.dp),
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = Color(0xFFE8F5E9),
                                     selectedLabelColor = LoyGreen,
@@ -274,8 +284,8 @@ fun InventoryScreen(
                             FilterChip(
                                 selected = lowStockOnly,
                                 onClick = { lowStockOnly = !lowStockOnly },
-                                label = { Text("Low / Out ($lowCount)") },
-                                modifier = Modifier.testTag("inventory_filter_low_stock"),
+                                label = { Text("Low / Out ($lowCount)", style = MaterialTheme.typography.labelMedium) },
+                                modifier = Modifier.height(30.dp).testTag("inventory_filter_low_stock"),
                             )
                         }
                         items(data.categories, key = { it.id }) { cat ->
@@ -285,7 +295,8 @@ fun InventoryScreen(
                                 onClick = {
                                     selectedCategoryFilter = if (sel) null else cat.id
                                 },
-                                label = { Text(cat.name) },
+                                label = { Text(cat.name, style = MaterialTheme.typography.labelMedium) },
+                                modifier = Modifier.height(30.dp),
                             )
                         }
                     }
@@ -305,19 +316,19 @@ fun InventoryScreen(
                         }
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(14.dp, 10.dp, 14.dp, 88.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(12.dp, 8.dp, 12.dp, 76.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             items(filteredProducts, key = { it.id }) { product ->
                                 val catName = data.categories.firstOrNull { it.id == product.categoryId }?.name
                                     ?: "Uncategorized"
                                 Surface(
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     color = LoySurface,
                                     border = BorderStroke(1.dp, LoyBorder),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .clip(RoundedCornerShape(10.dp))
                                         .clickable {
                                             isCreatingItem = false
                                             editingItem = product
@@ -325,13 +336,17 @@ fun InventoryScreen(
                                         .testTag("inventory_product_${product.id}"),
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(12.dp),
+                                        modifier = Modifier.padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        ItemThumbnail(item = product, size = 44.dp)
-                                        Spacer(Modifier.width(12.dp))
+                                        ItemThumbnail(item = product, size = 36.dp)
+                                        Spacer(Modifier.width(10.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(product.name, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                product.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
                                             Text(
                                                 "$catName${if (product.sku.isNotEmpty()) " · SKU ${product.sku}" else ""}",
                                                 style = MaterialTheme.typography.bodySmall,
@@ -341,7 +356,7 @@ fun InventoryScreen(
                                         }
                                         Text(
                                             formatCents(product.priceCents, sym),
-                                            style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
+                                            style = TabularMoneyStyle.merge(MaterialTheme.typography.titleSmall),
                                             fontWeight = FontWeight.Bold,
                                         )
                                     }
@@ -362,40 +377,49 @@ fun InventoryScreen(
                         }
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(14.dp, 14.dp, 14.dp, 88.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(12.dp, 10.dp, 12.dp, 76.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             items(data.categories, key = { it.id }) { cat ->
                                 val count = data.items.count { it.categoryId == cat.id }
                                 val tint = tileColorFor(cat.id)
                                 Surface(
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     color = LoySurface,
                                     border = BorderStroke(1.dp, LoyBorder),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .clip(RoundedCornerShape(10.dp))
                                         .clickable {
                                             isCreatingCategory = false
                                             editingCategory = cat
                                         },
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(14.dp),
+                                        modifier = Modifier.padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(RoundedCornerShape(10.dp))
+                                                .size(34.dp)
+                                                .clip(RoundedCornerShape(8.dp))
                                                 .background(tint.copy(alpha = 0.14f)),
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            Icon(categoryIconFor(cat.id), contentDescription = null, tint = tint)
+                                            Icon(
+                                                categoryIconFor(cat.id),
+                                                contentDescription = null,
+                                                tint = tint,
+                                                modifier = Modifier.size(18.dp),
+                                            )
                                         }
-                                        Spacer(Modifier.width(12.dp))
+                                        Spacer(Modifier.width(10.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(cat.name, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                cat.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
                                             Text("$count products", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                         }
                                     }
@@ -407,18 +431,18 @@ fun InventoryScreen(
 
                 2 -> {
                     Column(
-                        modifier = Modifier.fillMaxSize().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize().padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         GroupCard {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Icon(Icons.Outlined.LocalOffer, contentDescription = null, tint = LoyGreen)
-                                    Text("Ticket Discounts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Outlined.LocalOffer, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
+                                    Text("Ticket Discounts", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                 }
                                 Text(
                                     "LoyPOS supports whole-sale percentage discounts (5%, 10%, 15%, 20%, 25%, or custom %) and fixed currency discounts directly on the Checkout ticket panel.",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = LoyTextSecondary,
                                 )
                                 Text(
@@ -531,27 +555,27 @@ private fun ProductEditorBottomSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(if (isNew) "New Product" else "Edit Product", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(if (isNew) "New Product" else "Edit Product", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 if (!isNew) {
-                    IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete product", tint = LoyError)
+                    IconButton(onClick = onDelete, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete product", tint = LoyError, modifier = Modifier.size(20.dp))
                     }
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -568,16 +592,16 @@ private fun ProductEditorBottomSheet(
                             contentScale = ContentScale.Crop,
                         )
                     } else {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, tint = LoyTextSecondary)
+                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, tint = LoyTextSecondary, modifier = Modifier.size(20.dp))
                     }
                 }
                 OutlinedButton(
                     onClick = {
                         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                     },
-                    modifier = Modifier.heightIn(min = 48.dp),
+                    modifier = Modifier.height(38.dp),
                 ) {
-                    Text("Choose photo")
+                    Text("Choose photo", style = MaterialTheme.typography.labelLarge)
                 }
                 if (pickedPhotoUri != null || (!removeExistingPhoto && product.hasPhoto)) {
                     TextButton(onClick = {
@@ -739,11 +763,11 @@ private fun ProductEditorBottomSheet(
                     onSave(updated, pickedPhotoUri, removeExistingPhoto)
                 },
                 enabled = name.trim().isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("item_save_button"),
+                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("item_save_button"),
             ) {
                 Text("Save product")
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }

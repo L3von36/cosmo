@@ -1,7 +1,6 @@
 package com.loypos.app.ui.screens
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -16,9 +15,6 @@ import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
@@ -26,6 +22,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import com.loypos.app.ui.components.CompactBottomNavBar
+import com.loypos.app.ui.components.CompactNavEntry
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +59,7 @@ import com.loypos.app.ui.navigation.ReportsRoute
 import com.loypos.app.ui.navigation.SettingsRoute
 import com.loypos.app.ui.navigation.ShiftRoute
 import com.loypos.app.ui.navigation.StockRoute
+import com.loypos.app.ui.theme.LocalLoyWindowSize
 import com.loypos.app.ui.theme.LoyGreen
 import com.loypos.app.ui.theme.LoyGreenLight
 import com.loypos.app.ui.theme.LoySurface
@@ -147,31 +146,28 @@ fun MainScreen(
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val useRail = maxWidth >= 840.dp
+    val windowSize = LocalLoyWindowSize.current
+    val useRail = windowSize.useNavigationRail
 
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
                 if (showTopLevelChrome && !useRail) {
-                    NavigationBar(containerColor = LoySurface) {
-                        topLevelDestinations.forEach { entry ->
+                    CompactBottomNavBar(
+                        entries = topLevelDestinations.map { entry ->
                             val selected = currentDestination?.hierarchy?.any { it.hasRoute(entry.routeClass) } == true
-                            NavigationBarItem(
+                            CompactNavEntry(
+                                label = entry.label,
+                                icon = entry.icon,
                                 selected = selected,
+                                tag = entry.tag,
                                 onClick = { navigateToTopLevel(entry.route) },
-                                icon = { Icon(entry.icon, contentDescription = entry.label) },
-                                label = { Text(entry.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = LoyGreen,
-                                    selectedTextColor = LoyGreen,
-                                    indicatorColor = LoyGreenLight,
-                                ),
-                                modifier = Modifier.testTag(entry.tag),
                             )
-                        }
-                    }
+                        },
+                        selectedColor = LoyGreen,
+                        indicatorColor = LoyGreenLight,
+                    )
                 }
             },
         ) { padding ->
@@ -361,7 +357,6 @@ fun MainScreen(
                                 onBack = { navController.popBackStack() },
                             )
                         }
-                    }
                 }
             }
         }

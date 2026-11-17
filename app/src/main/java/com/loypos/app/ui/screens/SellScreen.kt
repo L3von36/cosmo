@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -21,6 +20,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -86,6 +88,7 @@ import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.TransactionViewModel
 import com.loypos.app.ui.UiSessionState
 import com.loypos.app.ui.components.BranchPickerSheet
+import com.loypos.app.ui.components.CompactSearchField
 import com.loypos.app.ui.components.CustomerPickerSheet
 import com.loypos.app.ui.components.DiscountBottomSheet
 import com.loypos.app.ui.components.EmptyState
@@ -95,6 +98,8 @@ import com.loypos.app.ui.components.PillBadge
 import com.loypos.app.ui.components.StockDotBadge
 import com.loypos.app.ui.components.TicketsBottomSheet
 import com.loypos.app.ui.components.TopSyncIconButton
+import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.LocalLoyWindowSize
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -105,6 +110,7 @@ import com.loypos.app.ui.theme.LoySurfaceVariant
 import com.loypos.app.ui.theme.LoyTextPrimary
 import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.TabularMoneyStyle
+import com.loypos.app.ui.theme.accessibleTouchTarget
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,20 +151,20 @@ fun SellScreen(
     }
     val sym = data.settings.currencySymbol
     val isCashier = session.currentUser?.isCashier == true
+    val windowSize = LocalLoyWindowSize.current
+    val metrics = LocalLoyMetrics.current
 
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
+            expandedHeight = metrics.topBarHeight,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
             title = {
                 if (searchOpen) {
-                    OutlinedTextField(
+                    CompactSearchField(
                         value = session.sellSearchQuery,
                         onValueChange = { viewModel.setSellSearch(it) },
-                        placeholder = { Text("Search name, SKU or barcode") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("sell_search_input"),
+                        placeholder = "Search name, SKU or barcode",
+                        inputTestTag = "sell_search_input",
                     )
                 } else {
                     Column {
@@ -182,12 +188,12 @@ fun SellScreen(
                                     Icons.Outlined.Storefront,
                                     contentDescription = null,
                                     tint = LoyGreen,
-                                    modifier = Modifier.size(13.dp),
+                                    modifier = Modifier.size(12.dp),
                                 )
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(3.dp))
                                 Text(
                                     text = activeBranch.name,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.labelSmall,
                                     color = LoyGreen,
                                     fontWeight = FontWeight.Medium,
                                 )
@@ -206,11 +212,14 @@ fun SellScreen(
                             searchOpen = true
                         }
                     },
-                    modifier = Modifier.size(48.dp).testTag("sell_search_toggle"),
+                    modifier = Modifier
+                        .accessibleTouchTarget(metrics.minTouchTarget)
+                        .testTag("sell_search_toggle"),
                 ) {
                     Icon(
                         if (searchOpen) Icons.Outlined.Close else Icons.Outlined.Search,
                         contentDescription = if (searchOpen) "Close search" else "Search catalog",
+                        modifier = Modifier.size(20.dp),
                     )
                 }
                 TopSyncIconButton(
@@ -224,8 +233,8 @@ fun SellScreen(
         // Ticket Tabs Bar
         Surface(color = LoySurface) {
             LazyRow(
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = metrics.screenPadding, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(metrics.itemGap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 item {
@@ -233,11 +242,17 @@ fun SellScreen(
                     FilterChip(
                         selected = activeSelected,
                         onClick = { if (!activeSelected) transactionViewModel.clearCart() },
-                        label = { Text("Sale${if (cartSession.items.isNotEmpty() && activeSelected) " (${cartSession.items.size})" else ""}") },
+                        label = {
+                            Text(
+                                "Sale${if (cartSession.items.isNotEmpty() && activeSelected) " (${cartSession.items.size})" else ""}",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = LoyGreenLight,
                             selectedLabelColor = LoyGreen,
                         ),
+                        modifier = Modifier.height(30.dp),
                     )
                 }
                 items(branchTickets, key = { it.ticket.id }) { t ->
@@ -245,134 +260,153 @@ fun SellScreen(
                     FilterChip(
                         selected = isSel,
                         onClick = { transactionViewModel.loadTicket(t) },
-                        label = { Text("${t.ticket.name.ifEmpty { "Ticket" }} (${t.lines.size})") },
+                        label = {
+                            Text(
+                                "${t.ticket.name.ifEmpty { "Ticket" }} (${t.lines.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = LoyGreenLight,
                             selectedLabelColor = LoyGreen,
                         ),
+                        modifier = Modifier.height(30.dp),
                     )
                 }
                 item {
                     OutlinedButton(
                         onClick = { showTicketsSheet = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(34.dp).testTag("open_tickets_button"),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(30.dp).testTag("open_tickets_button"),
                     ) {
-                        Icon(Icons.Outlined.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Outlined.ReceiptLong, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Tickets (${branchTickets.size})", style = MaterialTheme.typography.labelMedium)
+                        Text("Tickets (${branchTickets.size})", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
         }
         HorizontalDivider(color = LoyBorder)
 
-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            val isWide = maxWidth >= 860.dp
+        val isSplitPane = windowSize.useSplitPane
+        val columns = windowSize.gridColumns
 
-            Row(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    // Category Filter Row
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        item {
-                            FilterChip(
-                                selected = session.sellCategoryId == null,
-                                onClick = { viewModel.setSellCategory(null) },
-                                label = { Text("All (${data.items.count { it.availableInBranch(session.activeBranchId) }})") },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = LoyGreen,
-                                    selectedLabelColor = Color.White,
-                                ),
-                            )
-                        }
-                        items(data.categories, key = { it.id }) { cat ->
-                            val selected = session.sellCategoryId == cat.id
-                            FilterChip(
-                                selected = selected,
-                                onClick = { viewModel.setSellCategory(if (selected) null else cat.id) },
-                                label = { Text(cat.name) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = LoyGreen,
-                                    selectedLabelColor = Color.White,
-                                ),
-                            )
-                        }
-                    }
-
-                    if (filteredItems.isEmpty()) {
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            EmptyState(
-                                icon = Icons.Outlined.ShoppingBag,
-                                title = "No matching items",
-                                subtitle = if (session.sellSearchQuery.isNotEmpty()) "Try clearing your search filter." else "Add items from the Items tab.",
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            items(filteredItems, key = { it.id }) { item ->
-                                val qtyInCart = cartSession.items.firstOrNull { it.itemId == item.id }?.qty ?: 0.0
-                                ProductSaleRow(
-                                    item = item,
-                                    currencySymbol = sym,
-                                    qtyInCart = qtyInCart,
-                                    onAdd = { transactionViewModel.addProductToCart(item) },
-                                    onDecrement = {
-                                        transactionViewModel.updateCartItemQty(item.id, (qtyInCart - 1.0).coerceAtLeast(0.0))
-                                    },
+        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                // Category Filter Row
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = metrics.screenPadding, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(metrics.itemGap),
+                ) {
+                    item {
+                        FilterChip(
+                            selected = session.sellCategoryId == null,
+                            onClick = { viewModel.setSellCategory(null) },
+                            label = {
+                                Text(
+                                    "All (${data.items.count { it.availableInBranch(session.activeBranchId) }})",
+                                    style = MaterialTheme.typography.labelMedium,
                                 )
-                            }
-                        }
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = LoyGreen,
+                                selectedLabelColor = Color.White,
+                            ),
+                            modifier = Modifier.height(metrics.chipHeight),
+                        )
                     }
-
-                    if (!isWide) {
-                        CheckoutCartSummaryCard(
-                            cartItems = cartSession.items,
-                            totals = totals,
-                            currencySymbol = sym,
-                            onIncrement = { line ->
-                                val product = data.items.firstOrNull { it.id == line.itemId }
-                                if (product != null) {
-                                    transactionViewModel.addProductToCart(product)
-                                } else {
-                                    transactionViewModel.updateCartItemQty(line.itemId, line.qty + 1.0)
-                                }
-                            },
-                            onDecrement = { line ->
-                                transactionViewModel.updateCartItemQty(line.itemId, (line.qty - 1.0).coerceAtLeast(0.0))
-                            },
-                            onEditLine = { editingLine = it },
-                            onOpenCart = onNavigateToCart,
-                            onCharge = onNavigateToPayment,
+                    items(data.categories, key = { it.id }) { cat ->
+                        val selected = session.sellCategoryId == cat.id
+                        FilterChip(
+                            selected = selected,
+                            onClick = { viewModel.setSellCategory(if (selected) null else cat.id) },
+                            label = { Text(cat.name, style = MaterialTheme.typography.labelMedium) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = LoyGreen,
+                                selectedLabelColor = Color.White,
+                            ),
+                            modifier = Modifier.height(metrics.chipHeight),
                         )
                     }
                 }
 
-                if (isWide) {
-                    Surface(
-                        modifier = Modifier.width(360.dp).fillMaxHeight(),
-                        color = LoySurface,
-                        border = BorderStroke(1.dp, LoyBorder),
-                    ) {
-                        ReceiptPanelContent(
-                            cartSession = cartSession,
-                            data = data,
-                            totals = totals,
-                            onEditLine = { editingLine = it },
-                            onOpenDiscount = { showDiscountSheet = true },
-                            onOpenCustomer = { showCustomerSheet = true },
-                            onOpenNote = { showNoteDialog = true },
-                            onSaveTicket = { showSaveTicketDialog = true },
-                            onClear = { transactionViewModel.clearCart() },
-                            onCharge = onNavigateToPayment,
+                if (filteredItems.isEmpty()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        EmptyState(
+                            icon = Icons.Outlined.ShoppingBag,
+                            title = "No matching items",
+                            subtitle = if (session.sellSearchQuery.isNotEmpty()) "Try clearing your search filter." else "Add items from the Items tab.",
                         )
                     }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(
+                            start = metrics.screenPadding,
+                            end = metrics.screenPadding,
+                            top = 2.dp,
+                            bottom = 10.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(metrics.itemGap),
+                        horizontalArrangement = Arrangement.spacedBy(metrics.itemGap),
+                    ) {
+                        gridItems(filteredItems, key = { it.id }) { item ->
+                            val qtyInCart = cartSession.items.firstOrNull { it.itemId == item.id }?.qty ?: 0.0
+                            ProductSaleRow(
+                                item = item,
+                                currencySymbol = sym,
+                                qtyInCart = qtyInCart,
+                                onAdd = { transactionViewModel.addProductToCart(item) },
+                                onDecrement = {
+                                    transactionViewModel.updateCartItemQty(item.id, (qtyInCart - 1.0).coerceAtLeast(0.0))
+                                },
+                            )
+                        }
+                    }
+                }
+
+                if (!isSplitPane) {
+                    CheckoutCartSummaryCard(
+                        cartItems = cartSession.items,
+                        totals = totals,
+                        currencySymbol = sym,
+                        onIncrement = { line ->
+                            val product = data.items.firstOrNull { it.id == line.itemId }
+                            if (product != null) {
+                                transactionViewModel.addProductToCart(product)
+                            } else {
+                                transactionViewModel.updateCartItemQty(line.itemId, line.qty + 1.0)
+                            }
+                        },
+                        onDecrement = { line ->
+                            transactionViewModel.updateCartItemQty(line.itemId, (line.qty - 1.0).coerceAtLeast(0.0))
+                        },
+                        onEditLine = { editingLine = it },
+                        onOpenCart = onNavigateToCart,
+                        onCharge = onNavigateToPayment,
+                    )
+                }
+            }
+
+            if (isSplitPane) {
+                Surface(
+                    modifier = Modifier.width(340.dp).fillMaxHeight(),
+                    color = LoySurface,
+                    border = BorderStroke(1.dp, LoyBorder),
+                ) {
+                    ReceiptPanelContent(
+                        cartSession = cartSession,
+                        data = data,
+                        totals = totals,
+                        onEditLine = { editingLine = it },
+                        onOpenDiscount = { showDiscountSheet = true },
+                        onOpenCustomer = { showCustomerSheet = true },
+                        onOpenNote = { showNoteDialog = true },
+                        onSaveTicket = { showSaveTicketDialog = true },
+                        onClear = { transactionViewModel.clearCart() },
+                        onCharge = onNavigateToPayment,
+                    )
                 }
             }
         }
@@ -464,28 +498,30 @@ private fun ProductSaleRow(
     onDecrement: () -> Unit,
 ) {
     val outOfStock = item.trackStock && item.stock <= 0.0
+    val metrics = LocalLoyMetrics.current
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         color = LoySurface,
         border = BorderStroke(1.dp, if (qtyInCart > 0) LoyGreen else LoyBorder),
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (outOfStock) 0.52f else 1f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .clickable(enabled = !outOfStock, onClick = onAdd)
             .testTag("product_row_${item.id}"),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = metrics.rowHorizontalPadding, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ItemThumbnail(item = item, size = 44.dp)
-            Spacer(Modifier.width(12.dp))
+            ItemThumbnail(item = item, size = 34.dp)
+            Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
                         text = item.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
                         color = LoyTextPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -495,10 +531,10 @@ private fun ProductSaleRow(
                         PillBadge(text = "×${formatQty(qtyInCart)}")
                     }
                 }
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(1.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     if (item.sku.isNotEmpty()) {
                         Text(
@@ -511,30 +547,32 @@ private fun ProductSaleRow(
                     StockDotBadge(item = item)
                 }
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
                 text = if (item.priceCents > 0L) formatCents(item.priceCents, currencySymbol) else "Set price",
                 style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
                 fontWeight = FontWeight.Bold,
                 color = if (item.priceCents > 0L) LoyTextPrimary else LoyTextSecondary,
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(2.dp))
             if (qtyInCart > 0) {
                 IconButton(
                     onClick = onDecrement,
-                    modifier = Modifier.size(48.dp).testTag("product_dec_${item.id}"),
+                    modifier = Modifier
+                        .accessibleTouchTarget(metrics.minTouchTarget)
+                        .testTag("product_dec_${item.id}"),
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(7.dp),
                         color = LoySurfaceVariant,
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier.size(26.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 Icons.Outlined.Remove,
                                 contentDescription = "Remove one ${item.name}",
                                 tint = LoyTextPrimary,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(15.dp),
                             )
                         }
                     }
@@ -543,19 +581,21 @@ private fun ProductSaleRow(
             IconButton(
                 onClick = onAdd,
                 enabled = !outOfStock,
-                modifier = Modifier.size(48.dp).testTag("product_inc_${item.id}"),
+                modifier = Modifier
+                    .accessibleTouchTarget(metrics.minTouchTarget)
+                    .testTag("product_inc_${item.id}"),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(7.dp),
                     color = if (outOfStock) LoySurfaceVariant else LoyGreenLight,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier.size(26.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Outlined.Add,
                             contentDescription = "Add ${item.name}",
                             tint = if (outOfStock) LoyTextSecondary else LoyGreen,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(15.dp),
                         )
                     }
                 }
@@ -577,6 +617,7 @@ private fun CheckoutCartSummaryCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val totalUnits = cartItems.sumOf { it.qty }
+    val metrics = LocalLoyMetrics.current
 
     Surface(
         color = LoySurface,
@@ -590,16 +631,16 @@ private fun CheckoutCartSummaryCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(enabled = cartItems.isNotEmpty()) { expanded = !expanded }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.ShoppingCart,
                     contentDescription = null,
                     tint = if (cartItems.isNotEmpty()) LoyGreen else LoyTextSecondary,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(7.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Shopping Cart Summary",
@@ -634,11 +675,14 @@ private fun CheckoutCartSummaryCard(
                 if (cartItems.isNotEmpty()) {
                     IconButton(
                         onClick = { expanded = !expanded },
-                        modifier = Modifier.size(48.dp).testTag("cart_summary_expand"),
+                        modifier = Modifier
+                            .accessibleTouchTarget(metrics.minTouchTarget)
+                            .testTag("cart_summary_expand"),
                     ) {
                         Icon(
                             imageVector = if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
                             contentDescription = if (expanded) "Collapse cart summary" else "Expand cart summary",
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
@@ -650,21 +694,21 @@ private fun CheckoutCartSummaryCard(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 200.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                            .heightIn(max = 160.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         items(cartItems, key = { it.itemId }) { line ->
                             Surface(
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(8.dp),
                                 color = LoySurfaceVariant,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .clip(RoundedCornerShape(8.dp))
                                     .clickable { onEditLine(line) },
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
@@ -683,15 +727,15 @@ private fun CheckoutCartSummaryCard(
                                     }
                                     IconButton(
                                         onClick = { onDecrement(line) },
-                                        modifier = Modifier.size(48.dp),
+                                        modifier = Modifier.accessibleTouchTarget(metrics.minTouchTarget),
                                     ) {
-                                        Icon(Icons.Outlined.Remove, contentDescription = "Decrease ${line.name}", modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Outlined.Remove, contentDescription = "Decrease ${line.name}", modifier = Modifier.size(16.dp))
                                     }
                                     IconButton(
                                         onClick = { onIncrement(line) },
-                                        modifier = Modifier.size(48.dp),
+                                        modifier = Modifier.accessibleTouchTarget(metrics.minTouchTarget),
                                     ) {
-                                        Icon(Icons.Outlined.Add, contentDescription = "Increase ${line.name}", tint = LoyGreen, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Outlined.Add, contentDescription = "Increase ${line.name}", tint = LoyGreen, modifier = Modifier.size(16.dp))
                                     }
                                     Text(
                                         text = formatCents(line.lineTotalCents, currencySymbol),
@@ -704,8 +748,8 @@ private fun CheckoutCartSummaryCard(
                     }
                     HorizontalDivider(color = LoyBorder)
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Subtotal", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
@@ -731,15 +775,15 @@ private fun CheckoutCartSummaryCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = metrics.screenPadding, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
                     onClick = onOpenCart,
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
+                        .heightIn(min = metrics.minTouchTarget)
                         .testTag("view_ticket_button"),
                 ) {
                     Text(
@@ -753,7 +797,7 @@ private fun CheckoutCartSummaryCard(
                     enabled = cartItems.isNotEmpty(),
                     modifier = Modifier
                         .weight(1.35f)
-                        .height(50.dp)
+                        .heightIn(min = metrics.minTouchTarget)
                         .testTag("charge_bar_button"),
                 ) {
                     Text("Charge ${formatCents(totals.totalCents, currencySymbol)}", maxLines = 1)
@@ -782,14 +826,16 @@ fun CartScreen(
     val cartSession by transactionViewModel.cartSession.collectAsStateWithLifecycle()
     val totals by transactionViewModel.cartTotals.collectAsStateWithLifecycle()
     val sym = data.settings.currencySymbol
+    val metrics = LocalLoyMetrics.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Current Ticket (${cartSession.items.size})", fontWeight = FontWeight.Bold) },
+                expandedHeight = metrics.topBarHeight,
+                title = { Text("Current Ticket (${cartSession.items.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back to catalog")
+                    IconButton(onClick = onBack, modifier = Modifier.accessibleTouchTarget(metrics.minTouchTarget)) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back to catalog", modifier = Modifier.size(20.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
@@ -887,15 +933,15 @@ fun ReceiptPanelContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.ShoppingCart, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Icon(Icons.Outlined.ShoppingCart, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
                 Text(
                     text = "Shopping Cart Summary",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -904,37 +950,41 @@ fun ReceiptPanelContent(
         HorizontalDivider(color = LoyBorder)
         // Quick action chips row
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
                 FilterChip(
                     selected = customer != null,
                     onClick = onOpenCustomer,
-                    leadingIcon = { Icon(Icons.Outlined.PersonOutline, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                    label = { Text(customer?.name ?: "Customer") },
+                    leadingIcon = { Icon(Icons.Outlined.PersonOutline, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                    label = { Text(customer?.name ?: "Customer", style = MaterialTheme.typography.labelMedium) },
+                    modifier = Modifier.height(30.dp),
                 )
             }
             item {
                 FilterChip(
                     selected = cartSession.discount != null,
                     onClick = onOpenDiscount,
-                    leadingIcon = { Icon(Icons.Outlined.LocalOffer, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    leadingIcon = { Icon(Icons.Outlined.LocalOffer, contentDescription = null, modifier = Modifier.size(14.dp)) },
                     label = {
                         Text(
                             cartSession.discount?.let {
                                 if (it.type == "percent") "${formatQty(it.value)}% off" else "-${formatCents((it.value * 100).toLong(), sym)}"
-                            } ?: "Discount"
+                            } ?: "Discount",
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     },
+                    modifier = Modifier.height(30.dp),
                 )
             }
             item {
                 FilterChip(
                     selected = cartSession.note.isNotEmpty(),
                     onClick = onOpenNote,
-                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                    label = { Text(if (cartSession.note.isEmpty()) "Note" else "Note ✓") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.NoteAdd, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                    label = { Text(if (cartSession.note.isEmpty()) "Note" else "Note ✓", style = MaterialTheme.typography.labelMedium) },
+                    modifier = Modifier.height(30.dp),
                 )
             }
             if (cartSession.items.isNotEmpty()) {
@@ -942,8 +992,9 @@ fun ReceiptPanelContent(
                     FilterChip(
                         selected = false,
                         onClick = onClear,
-                        leadingIcon = { Icon(Icons.Outlined.DeleteSweep, contentDescription = null, tint = LoyError, modifier = Modifier.size(16.dp)) },
-                        label = { Text("Clear", color = LoyError) },
+                        leadingIcon = { Icon(Icons.Outlined.DeleteSweep, contentDescription = null, tint = LoyError, modifier = Modifier.size(14.dp)) },
+                        label = { Text("Clear", color = LoyError, style = MaterialTheme.typography.labelMedium) },
+                        modifier = Modifier.height(30.dp),
                     )
                 }
             }
@@ -962,11 +1013,11 @@ fun ReceiptPanelContent(
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 items(cartSession.items, key = { it.itemId }) { line ->
                     Surface(
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(9.dp),
                         color = LoySurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -974,7 +1025,7 @@ fun ReceiptPanelContent(
                             .testTag("cart_line_${line.itemId}"),
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
@@ -999,17 +1050,17 @@ fun ReceiptPanelContent(
         HorizontalDivider(color = LoyBorder)
         Surface(color = LoySurface) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Subtotal", color = LoyTextSecondary, style = MaterialTheme.typography.bodyMedium)
-                    Text(formatCents(totals.subtotalCents, sym), style = TabularMoneyStyle.merge(MaterialTheme.typography.bodyMedium))
+                    Text("Subtotal", color = LoyTextSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text(formatCents(totals.subtotalCents, sym), style = TabularMoneyStyle.merge(MaterialTheme.typography.bodySmall))
                 }
                 if (totals.discountCents > 0L) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Discount", color = LoyGreen, style = MaterialTheme.typography.bodyMedium)
-                        Text("-${formatCents(totals.discountCents, sym)}", color = LoyGreen, style = TabularMoneyStyle.merge(MaterialTheme.typography.bodyMedium))
+                        Text("Discount", color = LoyGreen, style = MaterialTheme.typography.bodySmall)
+                        Text("-${formatCents(totals.discountCents, sym)}", color = LoyGreen, style = TabularMoneyStyle.merge(MaterialTheme.typography.bodySmall))
                     }
                 }
                 if (totals.taxCents > 0L) {
@@ -1017,9 +1068,9 @@ fun ReceiptPanelContent(
                         Text(
                             if (data.settings.taxIncluded) "Tax (included)" else "Tax (${formatQty(data.settings.taxRatePercent)}%)",
                             color = LoyTextSecondary,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                         )
-                        Text(formatCents(totals.taxCents, sym), style = TabularMoneyStyle.merge(MaterialTheme.typography.bodyMedium))
+                        Text(formatCents(totals.taxCents, sym), style = TabularMoneyStyle.merge(MaterialTheme.typography.bodySmall))
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1030,21 +1081,21 @@ fun ReceiptPanelContent(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Spacer(Modifier.height(3.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onSaveTicket,
                         enabled = cartSession.items.isNotEmpty(),
-                        modifier = Modifier.weight(1f).height(50.dp).testTag("save_ticket_button"),
+                        modifier = Modifier.weight(1f).height(42.dp).testTag("save_ticket_button"),
                     ) {
-                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
                         Text("Save")
                     }
                     Button(
                         onClick = onCharge,
                         enabled = cartSession.items.isNotEmpty(),
-                        modifier = Modifier.weight(1.6f).height(50.dp).testTag("panel_charge_button"),
+                        modifier = Modifier.weight(1.6f).height(42.dp).testTag("panel_charge_button"),
                     ) {
                         Text("Charge ${formatCents(totals.totalCents, sym)}")
                     }

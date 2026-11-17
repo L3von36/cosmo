@@ -95,6 +95,8 @@ import com.loypos.app.ui.components.StatBlock
 import com.loypos.app.ui.theme.BackOfficeNavy
 import com.loypos.app.ui.theme.BackOfficeTeal
 import com.loypos.app.ui.theme.BackOfficeTealLight
+import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.LocalLoyWindowSize
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -108,6 +110,7 @@ import com.loypos.app.ui.theme.LoyTextPrimary
 import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.LoyWarning
 import com.loypos.app.ui.theme.TabularMoneyStyle
+import com.loypos.app.ui.theme.accessibleTouchTarget
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.rememberBottom
 import com.patrykandpatrick.vico.compose.cartesian.axis.rememberStart
@@ -245,9 +248,12 @@ fun BackOfficeDashboardScreen(
         if (selectedBranchId == null) "All Branches"
         else data.branches.firstOrNull { it.id == selectedBranchId }?.name ?: "Selected Branch"
     }
+    val windowSize = LocalLoyWindowSize.current
+    val metrics = LocalLoyMetrics.current
 
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
+            expandedHeight = metrics.topBarHeight,
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = BackOfficeNavy,
                 titleContentColor = Color.White,
@@ -257,7 +263,7 @@ fun BackOfficeDashboardScreen(
                 Column {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
                             text = data.settings.storeName,
@@ -276,13 +282,13 @@ fun BackOfficeDashboardScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
                             )
                         }
                     }
                     Text(
                         text = "${boUser?.fullName?.ifEmpty { boUser.email } ?: "Admin"} · ${boUser?.role?.replaceFirstChar { it.uppercase() } ?: "Admin"}",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.78f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -292,28 +298,28 @@ fun BackOfficeDashboardScreen(
             actions = {
                 TextButton(
                     onClick = onSwitchToPos,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("bo_switch_to_pos_button"),
+                    modifier = Modifier.heightIn(min = metrics.minTouchTarget).testTag("bo_switch_to_pos_button"),
                 ) {
-                    Icon(Icons.Outlined.PointOfSale, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Outlined.PointOfSale, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(3.dp))
                     Text("POS", color = Color.White, fontWeight = FontWeight.SemiBold)
                 }
                 IconButton(
                     onClick = { viewModel.syncCloud() },
                     enabled = !session.syncing,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.accessibleTouchTarget(metrics.minTouchTarget),
                 ) {
                     if (session.syncing) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
                     } else {
-                        Icon(Icons.Outlined.CloudSync, contentDescription = "Sync cloud", tint = Color.White)
+                        Icon(Icons.Outlined.CloudSync, contentDescription = "Sync Plesk MySQL", tint = Color.White, modifier = Modifier.size(19.dp))
                     }
                 }
                 IconButton(
                     onClick = onLockBackOffice,
-                    modifier = Modifier.size(48.dp).testTag("bo_lock_button"),
+                    modifier = Modifier.accessibleTouchTarget(metrics.minTouchTarget).testTag("bo_lock_button"),
                 ) {
-                    Icon(Icons.Outlined.Lock, contentDescription = "Lock Back Office", tint = Color.White)
+                    Icon(Icons.Outlined.Lock, contentDescription = "Lock Back Office", tint = Color.White, modifier = Modifier.size(19.dp))
                 }
             },
         )
@@ -322,23 +328,23 @@ fun BackOfficeDashboardScreen(
         Surface(color = LoySurface) {
             Column {
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     item {
                         FilterChip(
                             selected = selectedBranchId == null,
                             onClick = { viewModel.selectBackOfficeBranch(null) },
                             leadingIcon = {
-                                Icon(Icons.Outlined.Storefront, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Outlined.Storefront, contentDescription = null, modifier = Modifier.size(14.dp))
                             },
-                            label = { Text("All Branches") },
+                            label = { Text("All Branches", style = MaterialTheme.typography.labelMedium) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BackOfficeTealLight,
                                 selectedLabelColor = BackOfficeTeal,
                                 selectedLeadingIconColor = BackOfficeTeal,
                             ),
-                            modifier = Modifier.testTag("bo_branch_all"),
+                            modifier = Modifier.height(30.dp).testTag("bo_branch_all"),
                         )
                     }
                     items(data.branches, key = { it.id }) { branch ->
@@ -346,11 +352,12 @@ fun BackOfficeDashboardScreen(
                         FilterChip(
                             selected = sel,
                             onClick = { viewModel.selectBackOfficeBranch(if (sel) null else branch.id) },
-                            label = { Text(branch.name) },
+                            label = { Text(branch.name, style = MaterialTheme.typography.labelMedium) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BackOfficeTealLight,
                                 selectedLabelColor = BackOfficeTeal,
                             ),
+                            modifier = Modifier.height(30.dp),
                         )
                     }
                 }
@@ -360,8 +367,8 @@ fun BackOfficeDashboardScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(metrics.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionGap),
         ) {
             // Period filter + Executive Financial Summary
             item {
@@ -371,64 +378,93 @@ fun BackOfficeDashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SectionHeader("Financial Performance")
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf("Today", "7D", "30D", "All").forEachIndexed { idx, label ->
                             FilterChip(
                                 selected = periodIdx == idx,
                                 onClick = { periodIdx = idx },
-                                label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = BackOfficeNavy,
                                     selectedLabelColor = Color.White,
                                 ),
+                                modifier = Modifier.height(metrics.chipHeight),
                             )
                         }
                     }
                 }
                 GroupCard(modifier = Modifier.testTag("bo_financial_card")) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatBlock(
-                                label = "Net Revenue",
-                                value = formatCents(netRevenueCents, sym),
-                                valueColor = BackOfficeTeal,
-                                modifier = Modifier.weight(1f),
-                            )
-                            StatBlock(
-                                label = "Gross Profit (${formatQty(marginPercent)}%)",
-                                value = formatCents(grossProfitCents, sym),
-                                valueColor = if (grossProfitCents >= 0L) LoyGreen else LoyError,
-                                modifier = Modifier.weight(1f),
-                            )
+                    Column(modifier = Modifier.padding(metrics.cardPadding), verticalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                        if (windowSize.isCompact) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                                StatBlock(
+                                    label = "Net Revenue",
+                                    value = formatCents(netRevenueCents, sym),
+                                    valueColor = BackOfficeTeal,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Gross Profit (${formatQty(marginPercent)}%)",
+                                    value = formatCents(grossProfitCents, sym),
+                                    valueColor = if (grossProfitCents >= 0L) LoyGreen else LoyError,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                                StatBlock(
+                                    label = "Orders / Refunds",
+                                    value = "${completedSales.size} / ${refundedSales.size}",
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Avg Basket",
+                                    value = formatCents(avgTicketCents, sym),
+                                    valueColor = LoyInfo,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
+                                StatBlock(
+                                    label = "Net Revenue",
+                                    value = formatCents(netRevenueCents, sym),
+                                    valueColor = BackOfficeTeal,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Gross Profit (${formatQty(marginPercent)}%)",
+                                    value = formatCents(grossProfitCents, sym),
+                                    valueColor = if (grossProfitCents >= 0L) LoyGreen else LoyError,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Orders / Refunds",
+                                    value = "${completedSales.size} / ${refundedSales.size}",
+                                    modifier = Modifier.weight(1f),
+                                )
+                                StatBlock(
+                                    label = "Avg Basket",
+                                    value = formatCents(avgTicketCents, sym),
+                                    valueColor = LoyInfo,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatBlock(
-                                label = "Orders / Refunds",
-                                value = "${completedSales.size} / ${refundedSales.size}",
-                                modifier = Modifier.weight(1f),
-                            )
-                            StatBlock(
-                                label = "Avg Basket",
-                                value = formatCents(avgTicketCents, sym),
-                                valueColor = LoyInfo,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
                             OutlinedButton(
                                 onClick = onNavigateToReports,
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("bo_open_reports_btn"),
+                                modifier = Modifier.weight(1f).heightIn(min = metrics.minTouchTarget).testTag("bo_open_reports_btn"),
                             ) {
-                                Icon(Icons.Outlined.Assessment, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Outlined.Assessment, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
                                 Text("Reports & CSV")
                             }
                             OutlinedButton(
                                 onClick = onNavigateToReceipts,
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("bo_open_receipts_btn"),
+                                modifier = Modifier.weight(1f).heightIn(min = metrics.minTouchTarget).testTag("bo_open_receipts_btn"),
                             ) {
-                                Icon(Icons.Outlined.ReceiptLong, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Outlined.ReceiptLong, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
                                 Text("Audit Ledger")
                             }
                         }
@@ -439,7 +475,7 @@ fun BackOfficeDashboardScreen(
                         val todayNet = todaySummary.netCents
                         val goalRatio = if (targetCents > 0L) (todayNet.toFloat() / targetCents.toFloat()).coerceIn(0f, 1f) else 0f
                         val goalPct = if (targetCents > 0L) ((todayNet * 100.0) / targetCents).roundToInt() else 0
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -449,7 +485,7 @@ fun BackOfficeDashboardScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    Icon(Icons.Outlined.Flag, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Outlined.Flag, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(15.dp))
                                     Text(
                                         text = if (targetCents > 0L) {
                                             "Today's Goal: ${formatCents(todayNet, sym)} / ${formatCents(targetCents, sym)} ($goalPct%)"
@@ -463,7 +499,7 @@ fun BackOfficeDashboardScreen(
                                 }
                                 TextButton(
                                     onClick = { showGoalDialog = true },
-                                    modifier = Modifier.heightIn(min = 48.dp).testTag("bo_set_goal_button"),
+                                    modifier = Modifier.heightIn(min = metrics.minTouchTarget).testTag("bo_set_goal_button"),
                                 ) {
                                     Text(if (targetCents > 0L) "Edit" else "Set Goal", color = BackOfficeTeal)
                                 }
@@ -497,8 +533,8 @@ fun BackOfficeDashboardScreen(
             item {
                 SectionHeader("Inventory Valuation & Health")
                 GroupCard(modifier = Modifier.testTag("bo_inventory_health_card")) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             StatBlock(
                                 label = "Retail Stock Value",
                                 value = formatCents(retailValuationCents, sym),
@@ -513,12 +549,12 @@ fun BackOfficeDashboardScreen(
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
                                     .background(if (outOfStockItems.isNotEmpty() || lowStockItems.isNotEmpty()) Color(0xFFFFF3E0) else BackOfficeTealLight),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -526,6 +562,7 @@ fun BackOfficeDashboardScreen(
                                     imageVector = if (outOfStockItems.isNotEmpty() || lowStockItems.isNotEmpty()) Icons.Outlined.WarningAmber else Icons.Outlined.Inventory2,
                                     contentDescription = null,
                                     tint = if (outOfStockItems.isNotEmpty()) LoyWarning else BackOfficeTeal,
+                                    modifier = Modifier.size(18.dp),
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
@@ -542,13 +579,13 @@ fun BackOfficeDashboardScreen(
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.NotificationsActive,
                                 contentDescription = null,
                                 tint = if (data.settings.lowStockAlertsEnabled) BackOfficeTeal else LoyTextSecondary,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(18.dp),
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
@@ -570,21 +607,21 @@ fun BackOfficeDashboardScreen(
                             }
                             TextButton(
                                 onClick = { viewModel.runLowStockCheckNow() },
-                                modifier = Modifier.heightIn(min = 48.dp).testTag("bo_dash_run_stock_check"),
+                                modifier = Modifier.heightIn(min = metrics.minTouchTarget).testTag("bo_dash_run_stock_check"),
                             ) {
                                 Text("Run Check", color = BackOfficeTeal, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(metrics.itemGap)) {
                             OutlinedButton(
                                 onClick = onNavigateToCatalog,
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = metrics.minTouchTarget),
                             ) {
                                 Text("Manage Catalog")
                             }
                             OutlinedButton(
                                 onClick = onNavigateToStock,
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                modifier = Modifier.weight(1f).heightIn(min = metrics.minTouchTarget),
                             ) {
                                 Text("Adjust Stock")
                             }
@@ -593,62 +630,133 @@ fun BackOfficeDashboardScreen(
                 }
             }
 
-            // Branch Performance Breakdown
-            if (branchPerformance.isNotEmpty()) {
+            // Branch Performance + Team Activity (side-by-side on Expanded)
+            if (windowSize.isExpanded) {
                 item {
-                    SectionHeader("Branch Performance")
-                    GroupCard {
-                        val maxBranchRev = branchPerformance.maxOf { it.third }.coerceAtLeast(1L)
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            branchPerformance.forEach { (name, count, rev) ->
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("$name ($count orders)", fontWeight = FontWeight.Medium)
-                                        Text(
-                                            formatCents(rev, sym),
-                                            style = TabularMoneyStyle,
-                                            fontWeight = FontWeight.Bold,
-                                            color = BackOfficeNavy,
-                                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(metrics.sectionGap),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        if (branchPerformance.isNotEmpty()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                SectionHeader("Branch Performance")
+                                GroupCard {
+                                    val maxBranchRev = branchPerformance.maxOf { it.third }.coerceAtLeast(1L)
+                                    Column(modifier = Modifier.padding(metrics.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        branchPerformance.forEach { (name, count, rev) ->
+                                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                    Text("$name ($count orders)", fontWeight = FontWeight.Medium)
+                                                    Text(
+                                                        formatCents(rev, sym),
+                                                        style = TabularMoneyStyle,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = BackOfficeNavy,
+                                                    )
+                                                }
+                                                LinearProgressIndicator(
+                                                    progress = { rev.toFloat() / maxBranchRev.toFloat() },
+                                                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(999.dp)),
+                                                    color = BackOfficeTeal,
+                                                    trackColor = LoySurfaceVariant,
+                                                )
+                                            }
+                                        }
                                     }
-                                    LinearProgressIndicator(
-                                        progress = { rev.toFloat() / maxBranchRev.toFloat() },
-                                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(999.dp)),
-                                        color = BackOfficeTeal,
-                                        trackColor = LoySurfaceVariant,
+                                }
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            SectionHeader("Team & Cashier Activity")
+                            GroupCard {
+                                if (cashierPerformance.isEmpty()) {
+                                    EmptyState(
+                                        icon = Icons.Outlined.Badge,
+                                        title = "No cashier sales in this window",
+                                        subtitle = "Completed sales from POS terminals will show seller attribution here.",
                                     )
+                                } else {
+                                    Column {
+                                        cashierPerformance.forEachIndexed { idx, (name, count, rev) ->
+                                            if (idx > 0) HorizontalDivider(color = LoyBorder)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = metrics.cardPadding, vertical = 9.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Icon(Icons.Outlined.Badge, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(19.dp))
+                                                Spacer(Modifier.width(10.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(name, fontWeight = FontWeight.SemiBold)
+                                                    Text("$count orders completed", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                                }
+                                                Text(formatCents(rev, sym), style = TabularMoneyStyle, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-
-            // Staff / Seller Performance
-            item {
-                SectionHeader("Team & Cashier Activity")
-                GroupCard {
-                    if (cashierPerformance.isEmpty()) {
-                        EmptyState(
-                            icon = Icons.Outlined.Badge,
-                            title = "No cashier sales in this window",
-                            subtitle = "Completed sales from POS terminals will show seller attribution here.",
-                        )
-                    } else {
-                        Column {
-                            cashierPerformance.forEachIndexed { idx, (name, count, rev) ->
-                                if (idx > 0) HorizontalDivider(color = LoyBorder)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(Icons.Outlined.Badge, contentDescription = null, tint = BackOfficeTeal)
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(name, fontWeight = FontWeight.SemiBold)
-                                        Text("$count orders completed", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+            } else {
+                // Branch Performance Breakdown
+                if (branchPerformance.isNotEmpty()) {
+                    item {
+                        SectionHeader("Branch Performance")
+                        GroupCard {
+                            val maxBranchRev = branchPerformance.maxOf { it.third }.coerceAtLeast(1L)
+                            Column(modifier = Modifier.padding(metrics.cardPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                branchPerformance.forEach { (name, count, rev) ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            Text("$name ($count orders)", fontWeight = FontWeight.Medium)
+                                            Text(
+                                                formatCents(rev, sym),
+                                                style = TabularMoneyStyle,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BackOfficeNavy,
+                                            )
+                                        }
+                                        LinearProgressIndicator(
+                                            progress = { rev.toFloat() / maxBranchRev.toFloat() },
+                                            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(999.dp)),
+                                            color = BackOfficeTeal,
+                                            trackColor = LoySurfaceVariant,
+                                        )
                                     }
-                                    Text(formatCents(rev, sym), style = TabularMoneyStyle, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Staff / Seller Performance
+                item {
+                    SectionHeader("Team & Cashier Activity")
+                    GroupCard {
+                        if (cashierPerformance.isEmpty()) {
+                            EmptyState(
+                                icon = Icons.Outlined.Badge,
+                                title = "No cashier sales in this window",
+                                subtitle = "Completed sales from POS terminals will show seller attribution here.",
+                            )
+                        } else {
+                            Column {
+                                cashierPerformance.forEachIndexed { idx, (name, count, rev) ->
+                                    if (idx > 0) HorizontalDivider(color = LoyBorder)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = metrics.cardPadding, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(Icons.Outlined.Badge, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(19.dp))
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(name, fontWeight = FontWeight.SemiBold)
+                                            Text("$count orders completed", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                        }
+                                        Text(formatCents(rev, sym), style = TabularMoneyStyle, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -669,7 +777,7 @@ fun BackOfficeDashboardScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { onNavigateToStock() }
-                                        .padding(14.dp),
+                                        .padding(horizontal = 12.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
@@ -693,22 +801,22 @@ fun BackOfficeDashboardScreen(
             // Quick Back Office Management shortcuts
             item {
                 SectionHeader("Back Office Shortcuts")
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = LoySurface,
                         border = BorderStroke(1.dp, LoyBorder),
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .clickable(onClick = onNavigateToCustomers),
                     ) {
                         Row(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(11.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(Icons.Outlined.PeopleOutline, contentDescription = null, tint = BackOfficeTeal)
+                            Icon(Icons.Outlined.PeopleOutline, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(19.dp))
                             Column {
                                 Text("Customers", fontWeight = FontWeight.SemiBold)
                                 Text("${data.customers.size} profiles", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
@@ -716,20 +824,20 @@ fun BackOfficeDashboardScreen(
                         }
                     }
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = LoySurface,
                         border = BorderStroke(1.dp, LoyBorder),
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .clickable(onClick = onNavigateToAdmin),
                     ) {
                         Row(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(11.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, tint = BackOfficeNavy)
+                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, tint = BackOfficeNavy, modifier = Modifier.size(19.dp))
                             Column {
                                 Text("Admin & Team", fontWeight = FontWeight.SemiBold)
                                 Text("${data.backOfficeAdmins.size} admins", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
@@ -737,7 +845,7 @@ fun BackOfficeDashboardScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -909,16 +1017,16 @@ private fun BackOfficeRevenueChartCard(
     )
 
     GroupCard(modifier = Modifier.testTag("bo_revenue_chart_card")) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
                             text = "Last $selectedDays days",
@@ -941,17 +1049,17 @@ private fun BackOfficeRevenueChartCard(
                         color = LoyTextSecondary,
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     listOf(7, 14, 30).forEach { days ->
                         FilterChip(
                             selected = selectedDays == days,
                             onClick = { onSelectDays(days) },
-                            label = { Text("${days}D", style = MaterialTheme.typography.labelMedium) },
+                            label = { Text("${days}D", style = MaterialTheme.typography.labelSmall) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = BackOfficeTealLight,
                                 selectedLabelColor = BackOfficeTeal,
                             ),
-                            modifier = Modifier.testTag("bo_trend_${days}d"),
+                            modifier = Modifier.height(28.dp).testTag("bo_trend_${days}d"),
                         )
                     }
                 }
@@ -1096,7 +1204,7 @@ private fun BackOfficeRevenueChartCard(
                     modelProducer = if (chartMode == RevenueChartMode.LINE) lineModelProducer else columnModelProducer,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(196.dp)
+                        .height(154.dp)
                         .testTag("bo_revenue_chart_host"),
                 )
             }

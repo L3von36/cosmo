@@ -1301,11 +1301,17 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun savePleskSyncToken(token: String) {
+        com.loypos.app.core.SecurityManager.saveSecureToken(getApplication(), token)
+        showMessage("Plesk Sync Token saved securely in Android Keystore")
+        syncCloud()
+    }
+
     fun syncCloud() {
         if (_session.value.syncing) return
         viewModelScope.launch {
             _session.update { it.copy(syncing = true) }
-            when (val outcome = CloudSyncClient.syncWithCloud(repo)) {
+            when (val outcome = CloudSyncClient.syncWithCloud(getApplication(), repo)) {
                 is CloudSyncClient.SyncOutcome.Success -> {
                     repo.saveSetting("last_sync_msg", outcome.message)
                     _session.update {

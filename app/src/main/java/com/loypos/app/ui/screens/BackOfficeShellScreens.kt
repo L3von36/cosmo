@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -33,6 +32,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Assessment
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
@@ -56,9 +56,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
@@ -103,6 +100,8 @@ import com.loypos.app.data.local.BackOfficeUserEntity
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
+import com.loypos.app.ui.components.CompactBottomNavBar
+import com.loypos.app.ui.components.CompactNavEntry
 import com.loypos.app.ui.components.ConfirmDialog
 import com.loypos.app.ui.components.GroupCard
 import com.loypos.app.ui.components.InventoryCsvSheet
@@ -119,11 +118,14 @@ import com.loypos.app.ui.navigation.BackOfficeStockRoute
 import com.loypos.app.ui.theme.BackOfficeNavy
 import com.loypos.app.ui.theme.BackOfficeTeal
 import com.loypos.app.ui.theme.BackOfficeTealLight
+import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.LocalLoyWindowSize
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
 import com.loypos.app.ui.theme.LoySurface
 import com.loypos.app.ui.theme.LoyTextSecondary
+import com.loypos.app.ui.theme.accessibleTouchTarget
 import kotlin.reflect.KClass
 
 private data class BackOfficeNavItem(
@@ -184,31 +186,28 @@ fun BackOfficeMainScreen(
         }
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val useRail = maxWidth >= 840.dp
+    val windowSize = LocalLoyWindowSize.current
+    val useRail = windowSize.useNavigationRail
 
-        Scaffold(
-            snackbarHost = { SnackbarHost(snackbarHostState) },
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            bottomBar = {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
                 if (showTopChrome && !useRail) {
-                    NavigationBar(containerColor = LoySurface) {
-                        topDestinations.forEach { entry ->
+                    CompactBottomNavBar(
+                        entries = topDestinations.map { entry ->
                             val selected = currentDestination?.hierarchy?.any { it.hasRoute(entry.routeClass) } == true
-                            NavigationBarItem(
+                            CompactNavEntry(
+                                label = entry.label,
+                                icon = entry.icon,
                                 selected = selected,
+                                tag = entry.tag,
                                 onClick = { navigateToTab(entry.route) },
-                                icon = { Icon(entry.icon, contentDescription = entry.label) },
-                                label = { Text(entry.label) },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = BackOfficeTeal,
-                                    selectedTextColor = BackOfficeTeal,
-                                    indicatorColor = BackOfficeTealLight,
-                                ),
-                                modifier = Modifier.testTag(entry.tag),
                             )
-                        }
-                    }
+                        },
+                        selectedColor = BackOfficeTeal,
+                        indicatorColor = BackOfficeTealLight,
+                    )
                 }
             },
         ) { padding ->
@@ -328,7 +327,6 @@ fun BackOfficeMainScreen(
             }
         }
     }
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -361,30 +359,32 @@ fun BackOfficeAdminScreen(
         }
     }
 
+    val metrics = LocalLoyMetrics.current
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
+            expandedHeight = metrics.topBarHeight,
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = BackOfficeNavy,
                 titleContentColor = Color.White,
             ),
-            title = { Text("Back Office Admin", fontWeight = FontWeight.Bold) },
+            title = { Text("Back Office Admin", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
         )
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(metrics.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(metrics.sectionGap),
         ) {
             // Back Office Authenticated User & Lock
             item {
                 SectionHeader("Back Office Session")
                 GroupCard {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, tint = BackOfficeTeal)
+                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(20.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     boUser?.fullName?.ifEmpty { boUser.email } ?: "Back Office Admin",
@@ -405,19 +405,19 @@ fun BackOfficeAdminScreen(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
                                 onClick = onSwitchToPos,
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("bo_admin_switch_pos"),
+                                modifier = Modifier.weight(1f).heightIn(min = 42.dp).testTag("bo_admin_switch_pos"),
                             ) {
-                                Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
                                 Text("Open POS")
                             }
                             Button(
                                 onClick = { showLockConfirm = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = LoyError, contentColor = Color.White),
-                                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("bo_admin_lock"),
+                                modifier = Modifier.weight(1f).heightIn(min = 42.dp).testTag("bo_admin_lock"),
                             ) {
-                                Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
                                 Text("Lock / Sign Out")
                             }
                         }
@@ -433,7 +433,7 @@ fun BackOfficeAdminScreen(
                         if (idx > 0) HorizontalDivider(color = LoyBorder)
                         val isSelf = admin.id == boUser?.id
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
@@ -457,9 +457,9 @@ fun BackOfficeAdminScreen(
                             if (!isSelf) {
                                 IconButton(
                                     onClick = { viewModel.deleteBackOfficeAdmin(admin.id) },
-                                    modifier = Modifier.size(48.dp),
+                                    modifier = Modifier.size(40.dp),
                                 ) {
-                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Remove Back Office admin", tint = LoyError)
+                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Remove Back Office admin", tint = LoyError, modifier = Modifier.size(19.dp))
                                 }
                             }
                         }
@@ -468,14 +468,14 @@ fun BackOfficeAdminScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 44.dp)
                             .clickable { showAddAdminDialog = true }
-                            .padding(14.dp)
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
                             .testTag("bo_add_admin_row"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Add, contentDescription = null, tint = BackOfficeTeal)
-                        Spacer(Modifier.width(10.dp))
+                        Icon(Icons.Outlined.Add, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text("Add Back Office admin", color = BackOfficeTeal, fontWeight = FontWeight.SemiBold)
                     }
                 }
@@ -488,12 +488,12 @@ fun BackOfficeAdminScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .heightIn(min = 48.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = BackOfficeTeal)
-                        Spacer(Modifier.width(12.dp))
+                        Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -540,14 +540,14 @@ fun BackOfficeAdminScreen(
                         )
                     }
                     HorizontalDivider(color = LoyBorder)
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(
                             text = "Scan interval",
                             style = MaterialTheme.typography.bodySmall,
                             color = LoyTextSecondary,
                         )
-                        Spacer(Modifier.height(6.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(Modifier.height(5.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(15L to "15 min", 30L to "30 min", 60L to "1 hr", 360L to "6 hr").forEach { (mins, label) ->
                                 FilterChip(
                                     selected = data.settings.lowStockIntervalMinutes == mins,
@@ -558,7 +558,8 @@ fun BackOfficeAdminScreen(
                                             intervalMinutes = mins,
                                         )
                                     },
-                                    label = { Text(label) },
+                                    label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                                    modifier = Modifier.height(30.dp),
                                 )
                             }
                         }
@@ -574,7 +575,7 @@ fun BackOfficeAdminScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 44.dp)
                             .clickable {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -584,12 +585,12 @@ fun BackOfficeAdminScreen(
                                     viewModel.runLowStockCheckNow()
                                 }
                             }
-                            .padding(14.dp)
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
                             .testTag("bo_admin_run_check_now"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = BackOfficeTeal)
-                        Spacer(Modifier.width(12.dp))
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(10.dp))
                         Text("Run WorkManager stock check now", color = BackOfficeTeal, fontWeight = FontWeight.SemiBold)
                     }
                 }
@@ -619,6 +620,14 @@ fun BackOfficeAdminScreen(
                         subtitle = "Export ${data.items.size} items or bulk-import SKU lists from CSV",
                         onClick = { showInventoryCsvSheet = true },
                         modifier = Modifier.testTag("bo_admin_inventory_csv_row"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    AdminNavRow(
+                        icon = Icons.Outlined.CloudSync,
+                        title = if (session.syncing) "Syncing with Plesk MySQL..." else "Plesk MySQL Cloud Sync",
+                        subtitle = session.lastSyncMessage ?: "Offline-first Room · novelsapps.com.et",
+                        onClick = { viewModel.syncCloud() },
+                        modifier = Modifier.testTag("bo_admin_plesk_sync_row"),
                     )
                     HorizontalDivider(color = LoyBorder)
                     AdminNavRow(
@@ -736,21 +745,22 @@ private fun AdminNavRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val metrics = LocalLoyMetrics.current
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = metrics.minTouchTarget)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = metrics.cardPadding, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = BackOfficeTeal)
-        Spacer(Modifier.width(12.dp))
+        Icon(icon, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Medium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = LoyTextSecondary)
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = LoyTextSecondary, modifier = Modifier.size(18.dp))
     }
 }
 

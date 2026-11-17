@@ -111,11 +111,18 @@ fun ShiftScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
-            title = { Text("Shift & Cash Drawer", fontWeight = FontWeight.Bold) },
+            expandedHeight = 50.dp,
+            title = {
+                Text(
+                    "Shift & Cash Drawer",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
             navigationIcon = {
                 if (onBack != null) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
+                    IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", modifier = Modifier.size(20.dp))
                     }
                 }
             },
@@ -128,13 +135,13 @@ fun ShiftScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
                 SectionHeader("Today's Sales")
                 GroupCard {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             StatBlock(
                                 label = "Net sales",
@@ -168,7 +175,7 @@ fun ShiftScreen(
                 SectionHeader("Current Shift")
                 if (openShift == null || openStats == null) {
                     GroupCard {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(11.dp)) {
                             EmptyState(
                                 icon = Icons.Outlined.LockOpen,
                                 title = "No shift open",
@@ -185,7 +192,7 @@ fun ShiftScreen(
                         openStats.cashOutCents,
                     )
                     GroupCard {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("Opened ${formatDateTime(openShift.openedAt)}", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                 PillBadge("Open")
@@ -196,31 +203,31 @@ fun ShiftScreen(
                             ShiftRow("Cash out", "-${formatCents(openStats.cashOutCents, sym)}", LoyError)
                             HorizontalDivider(color = LoyBorder)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Expected cash drawer", fontWeight = FontWeight.Bold)
+                                Text("Expected cash drawer", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                                 Text(
                                     formatCents(expected, sym),
-                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
+                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleSmall),
                                     fontWeight = FontWeight.Bold,
                                     color = LoyGreen,
                                 )
                             }
                             ShiftRow("Card sales", formatCents(openStats.cardSalesCents, sym))
 
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(2.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
                                     onClick = { cashMoveMode = "in" },
-                                    modifier = Modifier.weight(1f).height(48.dp).testTag("cash_in_button"),
+                                    modifier = Modifier.weight(1f).height(40.dp).testTag("cash_in_button"),
                                 ) {
-                                    Icon(Icons.Outlined.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Outlined.ArrowDownward, contentDescription = null, modifier = Modifier.size(15.dp))
                                     Spacer(Modifier.width(4.dp))
                                     Text("Cash in")
                                 }
                                 OutlinedButton(
                                     onClick = { cashMoveMode = "out" },
-                                    modifier = Modifier.weight(1f).height(48.dp).testTag("cash_out_button"),
+                                    modifier = Modifier.weight(1f).height(40.dp).testTag("cash_out_button"),
                                 ) {
-                                    Icon(Icons.Outlined.ArrowUpward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Outlined.ArrowUpward, contentDescription = null, modifier = Modifier.size(15.dp))
                                     Spacer(Modifier.width(4.dp))
                                     Text("Cash out")
                                 }
@@ -228,7 +235,7 @@ fun ShiftScreen(
                             Button(
                                 onClick = { showCloseSheet = true },
                                 colors = ButtonDefaults.buttonColors(containerColor = LoyError, contentColor = Color.White),
-                                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("close_shift_button"),
+                                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("close_shift_button"),
                             ) {
                                 Text("Close shift")
                             }
@@ -242,17 +249,18 @@ fun ShiftScreen(
                                 openStats.movements.forEachIndexed { idx, move ->
                                     if (idx > 0) HorizontalDivider(color = LoyBorder)
                                     Row(
-                                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
                                         Icon(
                                             if (move.isCashIn) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
                                             contentDescription = null,
                                             tint = if (move.isCashIn) LoyGreen else LoyError,
+                                            modifier = Modifier.size(18.dp),
                                         )
-                                        Spacer(Modifier.width(10.dp))
+                                        Spacer(Modifier.width(8.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(if (move.isCashIn) "Cash in" else "Cash out", fontWeight = FontWeight.Medium)
+                                            Text(if (move.isCashIn) "Cash in" else "Cash out", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                             Text(
                                                 "${formatDateTime(move.createdAt)}${if (move.note.isNotEmpty()) " · ${move.note}" else ""}",
                                                 style = MaterialTheme.typography.bodySmall,
@@ -261,7 +269,7 @@ fun ShiftScreen(
                                         }
                                         Text(
                                             text = "${if (move.isCashIn) "+" else "-"}${formatCents(move.amountCents, sym)}",
-                                            style = TabularMoneyStyle,
+                                            style = TabularMoneyStyle.merge(MaterialTheme.typography.bodyMedium),
                                             fontWeight = FontWeight.Bold,
                                             color = if (move.isCashIn) LoyGreen else LoyError,
                                         )
@@ -278,16 +286,16 @@ fun ShiftScreen(
                 items(closedShifts, key = { it.id }) { shift ->
                     val diff = shift.overShortCents() ?: 0L
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         color = LoySurface,
                         border = BorderStroke(1.dp, LoyBorder),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(Icons.Outlined.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp), tint = LoyTextSecondary)
-                                    Text(formatDateTime(shift.openedAt), fontWeight = FontWeight.SemiBold)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Icon(Icons.Outlined.AccessTime, contentDescription = null, modifier = Modifier.size(14.dp), tint = LoyTextSecondary)
+                                    Text(formatDateTime(shift.openedAt), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 }
                                 PillBadge(
                                     text = when {
@@ -428,23 +436,23 @@ private fun ShiftAmountSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LoyTextSecondary)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
             }
             Surface(
                 color = LoySurfaceVariant,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     Text(label, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                     Text(
                         amountText.ifEmpty { "0" },
-                        style = TabularMoneyStyle.merge(MaterialTheme.typography.headlineSmall),
+                        style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -472,11 +480,11 @@ private fun ShiftAmountSheet(
                     val cents = parseAmountToCents(amountText) ?: 0L
                     onConfirm(cents, note)
                 },
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("shift_sheet_confirm"),
+                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("shift_sheet_confirm"),
             ) {
                 Text(confirmLabel)
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }

@@ -93,8 +93,8 @@ fun LineEditorBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -102,7 +102,7 @@ fun LineEditorBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(line.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(line.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         "${formatCents(line.priceCents, currencySymbol)} each",
                         style = MaterialTheme.typography.bodySmall,
@@ -115,22 +115,22 @@ fun LineEditorBottomSheet(
                         onDismiss()
                     },
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(40.dp)
                         .testTag("line_editor_delete"),
                 ) {
-                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Remove item", tint = LoyError)
+                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Remove item", tint = LoyError, modifier = Modifier.size(20.dp))
                 }
             }
 
             Surface(
                 color = LoySurfaceVariant,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
@@ -140,15 +140,15 @@ fun LineEditorBottomSheet(
                             qtyText = formatQty(next)
                         },
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(40.dp)
                             .testTag("line_editor_minus"),
                     ) {
-                        Icon(Icons.Outlined.Remove, contentDescription = "Decrease quantity")
+                        Icon(Icons.Outlined.Remove, contentDescription = "Decrease quantity", modifier = Modifier.size(18.dp))
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = if (qtyText.isEmpty()) "0" else qtyText,
-                            style = TabularMoneyStyle.merge(MaterialTheme.typography.headlineSmall),
+                            style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
@@ -163,10 +163,10 @@ fun LineEditorBottomSheet(
                             qtyText = formatQty(parsedQty + 1.0)
                         },
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(40.dp)
                             .testTag("line_editor_plus"),
                     ) {
-                        Icon(Icons.Outlined.Add, contentDescription = "Increase quantity")
+                        Icon(Icons.Outlined.Add, contentDescription = "Increase quantity", modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -190,12 +190,12 @@ fun LineEditorBottomSheet(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(42.dp)
                     .testTag("line_editor_save"),
             ) {
                 Text("Apply quantity")
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
@@ -221,15 +221,15 @@ fun DiscountBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Sale Discount", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sale Discount", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 if (current != null) {
                     TextButton(
                         onClick = {
@@ -248,25 +248,25 @@ fun DiscountBottomSheet(
                     selected = mode == "percent",
                     onClick = { mode = "percent" },
                     shape = SegmentedButtonDefaults.itemShape(0, 2),
-                ) { Text("Percentage (%)") }
+                ) { Text("Percentage (%)", style = MaterialTheme.typography.labelLarge) }
                 SegmentedButton(
                     selected = mode == "amount",
                     onClick = { mode = "amount" },
                     shape = SegmentedButtonDefaults.itemShape(1, 2),
-                ) { Text("Fixed ($currencySymbol)") }
+                ) { Text("Fixed ($currencySymbol)", style = MaterialTheme.typography.labelLarge) }
             }
 
             if (mode == "percent") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     listOf(5, 10, 15, 20, 25).forEach { pct ->
                         FilterChip(
                             selected = valueText == pct.toString(),
                             onClick = { valueText = pct.toString() },
-                            label = { Text("$pct%") },
-                            modifier = Modifier.weight(1f),
+                            label = { Text("$pct%", style = MaterialTheme.typography.labelMedium) },
+                            modifier = Modifier.weight(1f).height(30.dp),
                         )
                     }
                 }
@@ -274,14 +274,14 @@ fun DiscountBottomSheet(
 
             Surface(
                 color = LoySurfaceVariant,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = if (mode == "percent") "${valueText.ifEmpty { "0" }}%" else "$currencySymbol${valueText.ifEmpty { "0" }}",
-                    style = TabularMoneyStyle.merge(MaterialTheme.typography.headlineSmall),
+                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier.padding(10.dp),
                 )
             }
 
@@ -308,12 +308,12 @@ fun DiscountBottomSheet(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(42.dp)
                     .testTag("discount_apply"),
             ) {
                 Text("Apply discount")
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
@@ -347,15 +347,15 @@ fun CustomerPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Customer", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Customer", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row {
                     if (selectedId != null) {
                         TextButton(onClick = {
@@ -396,44 +396,43 @@ fun CustomerPickerSheet(
                     enabled = newName.trim().isNotEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(42.dp),
                 ) {
                     Text("Save & Attach Customer")
                 }
             } else {
-                OutlinedTextField(
+                CompactSearchField(
                     value = search,
                     onValueChange = { search = it },
-                    label = { Text("Search customers") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "Search customers",
                 )
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 320.dp),
+                        .heightIn(max = 280.dp),
                 ) {
                     items(filtered, key = { it.id }) { cust ->
                         val isSel = cust.id == selectedId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 54.dp)
+                                .heightIn(min = 46.dp)
                                 .clickable {
                                     onSelect(cust)
                                     onDismiss()
                                 }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                                .padding(vertical = 7.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
                                 Icons.Outlined.PersonOutline,
                                 contentDescription = null,
                                 tint = if (isSel) LoyGreen else LoyTextSecondary,
+                                modifier = Modifier.size(19.dp),
                             )
-                            Spacer(Modifier.width(12.dp))
+                            Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(cust.name, fontWeight = FontWeight.Medium)
+                                Text(cust.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 if (cust.phone.isNotEmpty()) {
                                     Text(cust.phone, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                 }
@@ -441,14 +440,14 @@ fun CustomerPickerSheet(
                             PillBadge(text = "${cust.points} pts")
                             if (isSel) {
                                 Spacer(Modifier.width(6.dp))
-                                Icon(Icons.Outlined.Check, contentDescription = "Selected", tint = LoyGreen)
+                                Icon(Icons.Outlined.Check, contentDescription = "Selected", tint = LoyGreen, modifier = Modifier.size(18.dp))
                             }
                         }
                         HorizontalDivider(color = LoyBorder)
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
@@ -470,10 +469,10 @@ fun TicketsBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Open Tickets", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Open Tickets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (tickets.isEmpty()) {
                 EmptyState(
                     icon = Icons.Outlined.ReceiptLong,
@@ -484,13 +483,13 @@ fun TicketsBottomSheet(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 360.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     items(tickets, key = { it.ticket.id }) { t ->
                         val total = t.lines.sumOf { (it.priceCents * it.qty).roundToLong() }
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, LoyBorder),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -500,11 +499,15 @@ fun TicketsBottomSheet(
                                 },
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(t.ticket.name.ifEmpty { "Saved ticket" }, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        t.ticket.name.ifEmpty { "Saved ticket" },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                     Text(
                                         "${t.lines.size} items · ${formatDateTime(t.ticket.createdAt)}",
                                         style = MaterialTheme.typography.bodySmall,
@@ -513,18 +516,18 @@ fun TicketsBottomSheet(
                                 }
                                 Text(
                                     formatCents(total, currencySymbol),
-                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
+                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleSmall),
                                     fontWeight = FontWeight.Bold,
                                 )
-                                IconButton(onClick = { onDelete(t.ticket.id) }) {
-                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete ticket", tint = LoyError)
+                                IconButton(onClick = { onDelete(t.ticket.id) }, modifier = Modifier.size(38.dp)) {
+                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete ticket", tint = LoyError, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }
@@ -542,14 +545,14 @@ fun BranchPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            Text("Select Branch", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Select Branch", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             branches.forEach { branch ->
                 val selected = branch.id == activeBranchId
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = if (selected) LoyGreenLight else Color.Transparent,
                     border = BorderStroke(1.dp, if (selected) LoyGreen else LoyBorder),
                     modifier = Modifier
@@ -560,28 +563,29 @@ fun BranchPickerSheet(
                         },
                 ) {
                     Row(
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.Outlined.Storefront,
                             contentDescription = null,
                             tint = if (selected) LoyGreen else LoyTextSecondary,
+                            modifier = Modifier.size(19.dp),
                         )
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(branch.name, fontWeight = FontWeight.SemiBold, color = LoyTextPrimary)
+                            Text(branch.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = LoyTextPrimary)
                             if (branch.address.isNotEmpty()) {
                                 Text(branch.address, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                             }
                         }
                         if (selected) {
-                            Icon(Icons.Outlined.Check, contentDescription = "Active branch", tint = LoyGreen)
+                            Icon(Icons.Outlined.Check, contentDescription = "Active branch", tint = LoyGreen, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

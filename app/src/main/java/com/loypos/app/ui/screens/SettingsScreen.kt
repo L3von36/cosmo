@@ -102,6 +102,7 @@ import com.loypos.app.ui.components.PillBadge
 import com.loypos.app.ui.components.SectionHeader
 import com.loypos.app.ui.components.TopSyncIconButton
 import com.loypos.app.ui.theme.BackOfficeTeal
+import com.loypos.app.ui.theme.LocalLoyMetrics
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -122,21 +123,32 @@ fun CashierAccountScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
-            title = { Text("Account", fontWeight = FontWeight.Bold) },
+            expandedHeight = 50.dp,
+            title = {
+                Text(
+                    "Account",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
         )
         HorizontalDivider(color = LoyBorder)
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             GroupCard {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LoyGreen)
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(20.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(user?.ownerName?.ifEmpty { user.email } ?: "Seller", fontWeight = FontWeight.Bold)
+                            Text(
+                                user?.ownerName?.ifEmpty { user.email } ?: "Seller",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
                             Text(user?.email ?: "", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                         }
                         PillBadge("Seller")
@@ -150,10 +162,10 @@ fun CashierAccountScreen(
             Button(
                 onClick = { showSignOutConfirm = true },
                 colors = ButtonDefaults.buttonColors(containerColor = LoyError, contentColor = Color.White),
-                modifier = Modifier.fillMaxWidth().height(50.dp).testTag("cashier_sign_out_button"),
+                modifier = Modifier.fillMaxWidth().height(42.dp).testTag("cashier_sign_out_button"),
             ) {
-                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
+                Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
                 Text("Sign out")
             }
         }
@@ -196,6 +208,7 @@ fun SettingsScreen(
     var showResetConfirm by remember { mutableStateOf(false) }
     var pendingRestoreBackup by remember { mutableStateOf<LocalBackup?>(null) }
     var showInventoryCsvSheet by remember { mutableStateOf(false) }
+    var showTokenDialog by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -211,9 +224,17 @@ fun SettingsScreen(
         if (uri != null) viewModel.importFromUri(uri)
     }
 
+    val metrics = LocalLoyMetrics.current
     Column(modifier = Modifier.fillMaxSize().background(LoyBackground)) {
         TopAppBar(
-            title = { Text("Settings", fontWeight = FontWeight.Bold) },
+            expandedHeight = metrics.topBarHeight,
+            title = {
+                Text(
+                    "Settings",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
             actions = {
                 TopSyncIconButton(syncing = session.syncing, onClick = { viewModel.syncCloud() })
@@ -223,28 +244,32 @@ fun SettingsScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(metrics.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(metrics.itemGap),
         ) {
             // Account
             item {
                 SectionHeader("Account")
                 GroupCard {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LoyGreen)
+                    Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.PersonOutline, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(20.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(user?.ownerName?.ifEmpty { data.settings.storeName } ?: data.settings.storeName, fontWeight = FontWeight.Bold)
+                                Text(
+                                    user?.ownerName?.ifEmpty { data.settings.storeName } ?: data.settings.storeName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
                                 Text(user?.email ?: "", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                             }
                             PillBadge("Owner")
                         }
                         OutlinedButton(
                             onClick = { showSignOutConfirm = true },
-                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("owner_sign_out_button"),
+                            modifier = Modifier.fillMaxWidth().height(40.dp).testTag("owner_sign_out_button"),
                         ) {
-                            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, tint = LoyError)
-                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = null, tint = LoyError, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
                             Text("Sign out", color = LoyError)
                         }
                     }
@@ -312,13 +337,13 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { editingBranch = branch }
-                                .padding(14.dp),
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Outlined.Storefront, contentDescription = null, tint = LoyGreen)
-                            Spacer(Modifier.width(12.dp))
+                            Icon(Icons.Outlined.Storefront, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(branch.name, fontWeight = FontWeight.Medium)
+                                Text(branch.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 if (branch.address.isNotEmpty()) {
                                     Text(branch.address, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                 }
@@ -326,23 +351,23 @@ fun SettingsScreen(
                             if (branch.id == session.activeBranchId) {
                                 PillBadge("Active")
                             }
-                            Icon(Icons.Outlined.Edit, contentDescription = "Edit branch", tint = LoyTextSecondary, modifier = Modifier.padding(start = 6.dp).size(18.dp))
+                            Icon(Icons.Outlined.Edit, contentDescription = "Edit branch", tint = LoyTextSecondary, modifier = Modifier.padding(start = 6.dp).size(16.dp))
                         }
                     }
                     HorizontalDivider(color = LoyBorder)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 44.dp)
                             .clickable {
                                 editingBranch = BranchEntity(id = newId(), name = "", createdAt = nowMs())
                             }
-                            .padding(14.dp),
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Add branch", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add branch", color = LoyGreen, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -356,26 +381,26 @@ fun SettingsScreen(
                             "No seller accounts yet. Add cashiers pinned to a specific branch.",
                             style = MaterialTheme.typography.bodySmall,
                             color = LoyTextSecondary,
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(11.dp),
                         )
                     } else {
                         data.staff.forEachIndexed { idx, seller ->
                             if (idx > 0) HorizontalDivider(color = LoyBorder)
                             val branchName = data.branches.firstOrNull { it.id == seller.branchId }?.name ?: "Branch"
                             Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(seller.ownerName.ifEmpty { seller.email }, fontWeight = FontWeight.Medium)
+                                    Text(seller.ownerName.ifEmpty { seller.email }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                     Text("${seller.email} · $branchName", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                 }
                                 Switch(
                                     checked = seller.active,
                                     onCheckedChange = { viewModel.toggleStaffActive(seller.id, it) },
                                 )
-                                IconButton(onClick = { viewModel.deleteStaff(seller.id) }) {
-                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete seller", tint = LoyError)
+                                IconButton(onClick = { viewModel.deleteStaff(seller.id) }, modifier = Modifier.size(38.dp)) {
+                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete seller", tint = LoyError, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
@@ -384,14 +409,14 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 44.dp)
                             .clickable { showAddStaffDialog = true }
-                            .padding(14.dp),
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen)
-                        Spacer(Modifier.width(10.dp))
-                        Text("Add seller account", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add seller account", color = LoyGreen, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -423,18 +448,18 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                            .heightIn(min = 48.dp)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = LoyGreen)
-                        Spacer(Modifier.width(12.dp))
+                        Icon(Icons.Outlined.NotificationsActive, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                Text("Periodic low-stock alerts", fontWeight = FontWeight.Medium)
+                                Text("Periodic low-stock alerts", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 PillBadge(
                                     text = if (data.settings.lowStockAlertsEnabled) session.lowStockWorkerStatus else "Off",
                                 )
@@ -473,14 +498,14 @@ fun SettingsScreen(
                         )
                     }
                     HorizontalDivider(color = LoyBorder)
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(
                             text = "Worker check interval",
                             style = MaterialTheme.typography.bodySmall,
                             color = LoyTextSecondary,
                         )
-                        Spacer(Modifier.height(6.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(Modifier.height(5.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(15L to "15 min", 30L to "30 min", 60L to "1 hr", 360L to "6 hr").forEach { (mins, label) ->
                                 FilterChip(
                                     selected = data.settings.lowStockIntervalMinutes == mins,
@@ -491,8 +516,8 @@ fun SettingsScreen(
                                             intervalMinutes = mins,
                                         )
                                     },
-                                    label = { Text(label) },
-                                    modifier = Modifier.testTag("settings_interval_${mins}m"),
+                                    label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                                    modifier = Modifier.height(30.dp).testTag("settings_interval_${mins}m"),
                                 )
                             }
                         }
@@ -509,7 +534,7 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 44.dp)
                             .clickable {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -519,13 +544,13 @@ fun SettingsScreen(
                                     viewModel.runLowStockCheckNow()
                                 }
                             }
-                            .padding(14.dp)
+                            .padding(horizontal = 12.dp, vertical = 9.dp)
                             .testTag("settings_low_stock_check_now"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = LoyGreen)
-                        Spacer(Modifier.width(12.dp))
-                        Text("Check low stock now", color = LoyGreen, fontWeight = FontWeight.SemiBold)
+                        Icon(Icons.Outlined.Inventory2, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text("Check low stock now", color = LoyGreen, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -569,11 +594,11 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { pendingRestoreBackup = backup }
-                                    .padding(14.dp),
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(Icons.Outlined.Restore, contentDescription = null, tint = LoyTextSecondary)
-                                Spacer(Modifier.width(12.dp))
+                                Icon(Icons.Outlined.Restore, contentDescription = null, tint = LoyTextSecondary, modifier = Modifier.size(19.dp))
+                                Spacer(Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Restore: ${backup.label}", style = MaterialTheme.typography.bodyMedium)
                                     Text(backup.sizeLabel, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
@@ -588,7 +613,7 @@ fun SettingsScreen(
             item {
                 SectionHeader("Storage, Health & Cloud")
                 GroupCard {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         val s = session.dbStats
                         Text(
                             "${s.items} items · ${s.categories} categories · ${s.receipts} receipts · ${s.customers} customers",
@@ -601,12 +626,12 @@ fun SettingsScreen(
                             color = LoyTextSecondary,
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { viewModel.checkIntegrity() }, modifier = Modifier.weight(1f).height(46.dp)) {
-                                Icon(Icons.Outlined.HealthAndSafety, contentDescription = null, modifier = Modifier.size(16.dp))
+                            OutlinedButton(onClick = { viewModel.checkIntegrity() }, modifier = Modifier.weight(1f).height(38.dp)) {
+                                Icon(Icons.Outlined.HealthAndSafety, contentDescription = null, modifier = Modifier.size(15.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Verify")
                             }
-                            OutlinedButton(onClick = { viewModel.optimiseDatabase() }, modifier = Modifier.weight(1f).height(46.dp)) {
+                            OutlinedButton(onClick = { viewModel.optimiseDatabase() }, modifier = Modifier.weight(1f).height(38.dp)) {
                                 Text("Optimise")
                             }
                         }
@@ -614,9 +639,18 @@ fun SettingsScreen(
                     HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
                         icon = Icons.Outlined.CloudSync,
-                        title = if (session.syncing) "Syncing..." else "Sync with LoyPOS Cloud",
-                        subtitle = session.lastSyncMessage ?: "Offline-first SQLite active",
+                        title = if (session.syncing) "Syncing with Plesk MySQL..." else "Sync with Plesk MySQL",
+                        subtitle = session.lastSyncMessage ?: "Offline-first Room store · novelsapps.com.et",
                         onClick = { viewModel.syncCloud() },
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.AdminPanelSettings,
+                        title = "Configure Plesk Sync Token",
+                        subtitle = "Store auth token securely in Android Keystore",
+                        iconTint = BackOfficeTeal,
+                        onClick = { showTokenDialog = true },
+                        modifier = Modifier.testTag("settings_configure_token_row"),
                     )
                 }
             }
@@ -628,20 +662,20 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 54.dp)
+                            .heightIn(min = 46.dp)
                             .clickable { showResetConfirm = true }
-                            .padding(14.dp),
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.RestartAlt, contentDescription = null, tint = LoyError)
-                        Spacer(Modifier.width(12.dp))
+                        Icon(Icons.Outlined.RestartAlt, contentDescription = null, tint = LoyError, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Reset all shop data", color = LoyError, fontWeight = FontWeight.SemiBold)
+                            Text("Reset all shop data", style = MaterialTheme.typography.bodyMedium, color = LoyError, fontWeight = FontWeight.SemiBold)
                             Text("Restores the 300-item demo catalog after saving a safety copy", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                         }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(10.dp))
             }
         }
     }
@@ -762,6 +796,59 @@ fun SettingsScreen(
             onDismiss = { pendingRestoreBackup = null },
         )
     }
+
+    if (showTokenDialog) {
+        PleskTokenDialog(
+            initialToken = com.loypos.app.core.SecurityManager.getSecureToken(context),
+            onSave = { token ->
+                viewModel.savePleskSyncToken(token)
+                showTokenDialog = false
+            },
+            onDismiss = { showTokenDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun PleskTokenDialog(
+    initialToken: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var token by remember { mutableStateOf(initialToken) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Plesk Secure Sync Token") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Enter the sync token generated on your Plesk backend (novelsapps.com.et). It will be stored securely using Android Keystore (EncryptedSharedPreferences) with hardware-level AES-256 encryption.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LoyTextSecondary,
+                )
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("Sync Token") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("settings_plesk_token_input"),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(token.trim()) },
+                modifier = Modifier.heightIn(min = 48.dp).testTag("settings_plesk_token_save"),
+            ) {
+                Text("Save & Sync")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable
@@ -776,18 +863,23 @@ private fun SettingsNavRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = iconTint)
-        Spacer(Modifier.width(12.dp))
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.Medium)
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
         }
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = LoyTextSecondary)
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = LoyTextSecondary,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 

@@ -10,3 +10,5 @@
 .cxx
 *.apk
 *.aab
+.env
+plesk-backend/api/v1/config.php

@@ -146,17 +146,17 @@ fun InventoryCsvSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(LoyGreenLight),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -164,12 +164,13 @@ fun InventoryCsvSheet(
                         imageVector = Icons.Outlined.TableView,
                         contentDescription = "Inventory CSV management",
                         tint = LoyGreen,
+                        modifier = Modifier.size(19.dp),
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Inventory CSV Import & Export",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
@@ -184,12 +185,12 @@ fun InventoryCsvSheet(
             SectionHeader("Export Inventory")
             GroupCard(modifier = Modifier.testTag("inventory_csv_export_card")) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         StatBlock(
                             label = "Products",
@@ -211,10 +212,10 @@ fun InventoryCsvSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .heightIn(min = 42.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable { includeArchived = !includeArchived }
-                            .padding(vertical = 4.dp),
+                            .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -234,7 +235,7 @@ fun InventoryCsvSheet(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         OutlinedButton(
                             onClick = {
@@ -244,11 +245,11 @@ fun InventoryCsvSheet(
                             enabled = exportPreview != null,
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 48.dp)
+                                .height(42.dp)
                                 .testTag("inventory_csv_save_button"),
                         ) {
-                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
                             Text("Save CSV")
                         }
                         Button(
@@ -257,11 +258,11 @@ fun InventoryCsvSheet(
                             colors = ButtonDefaults.buttonColors(containerColor = LoyGreen, contentColor = Color.White),
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 48.dp)
+                                .height(42.dp)
                                 .testTag("inventory_csv_share_button"),
                         ) {
-                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
                             Text("Share CSV")
                         }
                     }
@@ -272,8 +273,8 @@ fun InventoryCsvSheet(
             SectionHeader("Import Product List (CSV)")
             GroupCard(modifier = Modifier.testTag("inventory_csv_import_card")) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(11.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
                         text = "Upload a spreadsheet (.csv) to bulk-create new products and categories or update prices, SKUs, and stock quantities.",
@@ -294,21 +295,21 @@ fun InventoryCsvSheet(
                             colors = ButtonDefaults.buttonColors(containerColor = LoyInfo, contentColor = Color.White),
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 48.dp)
+                                .height(42.dp)
                                 .testTag("inventory_csv_pick_file_button"),
                         ) {
-                            Icon(Icons.Outlined.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Choose CSV File")
+                            Icon(Icons.Outlined.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text("Choose CSV")
                         }
                         OutlinedButton(
                             onClick = { saveTemplateLauncher.launch("loypos-inventory-template.csv") },
                             modifier = Modifier
-                                .heightIn(min = 48.dp)
+                                .height(42.dp)
                                 .testTag("inventory_csv_template_button"),
                         ) {
-                            Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
                             Text("Template")
                         }
                     }
@@ -540,7 +541,7 @@ fun InventoryCsvSheet(
                                 colors = ButtonDefaults.buttonColors(containerColor = LoyGreen, contentColor = Color.White),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 50.dp)
+                                    .height(42.dp)
                                     .testTag("inventory_csv_commit_button"),
                             ) {
                                 Text(
@@ -553,7 +554,7 @@ fun InventoryCsvSheet(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
         }
     }
 }

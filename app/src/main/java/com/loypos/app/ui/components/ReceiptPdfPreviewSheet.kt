@@ -114,17 +114,17 @@ fun ReceiptPdfPreviewSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(LoyGreenLight),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -132,12 +132,13 @@ fun ReceiptPdfPreviewSheet(
                         imageVector = Icons.Outlined.PictureAsPdf,
                         contentDescription = "Receipt PDF preview",
                         tint = LoyGreen,
+                        modifier = Modifier.size(19.dp),
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Receipt #$receiptNum Preview",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
@@ -164,7 +165,7 @@ fun ReceiptPdfPreviewSheet(
                     shape = SegmentedButtonDefaults.itemShape(0, 2),
                     modifier = Modifier.testTag("pdf_format_thermal"),
                 ) {
-                    Text("80mm Thermal")
+                    Text("80mm Thermal", style = MaterialTheme.typography.labelLarge)
                 }
                 SegmentedButton(
                     selected = selectedFormat == ReceiptPaperFormat.A4_STANDARD,
@@ -172,41 +173,41 @@ fun ReceiptPdfPreviewSheet(
                     shape = SegmentedButtonDefaults.itemShape(1, 2),
                     modifier = Modifier.testTag("pdf_format_a4"),
                 ) {
-                    Text("A4 Document")
+                    Text("A4 Document", style = MaterialTheme.typography.labelLarge)
                 }
             }
 
             // Rendered PDF Pages Preview Frame
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = LoySurfaceVariant,
                 border = BorderStroke(1.dp, LoyBorder),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 240.dp, max = 380.dp)
+                    .heightIn(min = 200.dp, max = 310.dp)
                     .testTag("pdf_preview_container"),
             ) {
                 when {
                     isRendering -> {
                         Box(
-                            modifier = Modifier.fillMaxWidth().height(260.dp),
+                            modifier = Modifier.fillMaxWidth().height(210.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                CircularProgressIndicator(color = LoyGreen, modifier = Modifier.size(32.dp))
+                                CircularProgressIndicator(color = LoyGreen, modifier = Modifier.size(28.dp))
                                 Text("Generating PDF preview...", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                             }
                         }
                     }
                     renderError != null -> {
                         Box(
-                            modifier = Modifier.fillMaxWidth().height(220.dp).padding(16.dp),
+                            modifier = Modifier.fillMaxWidth().height(190.dp).padding(14.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(renderError!!, color = LoyError, style = MaterialTheme.typography.bodyMedium)
+                            Text(renderError!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     previewResult != null -> {
@@ -215,18 +216,18 @@ fun ReceiptPdfPreviewSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState())
-                                .padding(14.dp),
+                                .padding(10.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             preview.previewBitmaps.forEachIndexed { pageIndex, bitmap ->
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(7.dp),
                                     color = Color.White,
-                                    shadowElevation = 3.dp,
+                                    shadowElevation = 2.dp,
                                     border = BorderStroke(1.dp, LoyBorder),
                                     modifier = if (selectedFormat == ReceiptPaperFormat.THERMAL_80MM) {
-                                        Modifier.widthIn(max = 260.dp).fillMaxWidth()
+                                        Modifier.widthIn(max = 220.dp).fillMaxWidth()
                                     } else {
                                         Modifier.fillMaxWidth()
                                     },
@@ -265,9 +266,9 @@ fun ReceiptPdfPreviewSheet(
                         }
                     },
                     enabled = readyFile != null && !isRendering,
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("pdf_preview_print_button"),
+                    modifier = Modifier.weight(1f).height(42.dp).testTag("pdf_preview_print_button"),
                 ) {
-                    Icon(Icons.Outlined.Print, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Print, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Print")
                 }
@@ -279,9 +280,9 @@ fun ReceiptPdfPreviewSheet(
                         }
                     },
                     enabled = readyFile != null && !isRendering,
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("pdf_preview_save_button"),
+                    modifier = Modifier.weight(1f).height(42.dp).testTag("pdf_preview_save_button"),
                 ) {
-                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Save")
                 }
@@ -294,14 +295,14 @@ fun ReceiptPdfPreviewSheet(
                     },
                     enabled = readyFile != null && !isRendering,
                     colors = ButtonDefaults.buttonColors(containerColor = LoyGreen, contentColor = Color.White),
-                    modifier = Modifier.weight(1.1f).heightIn(min = 48.dp).testTag("pdf_preview_share_button"),
+                    modifier = Modifier.weight(1.1f).height(42.dp).testTag("pdf_preview_share_button"),
                 ) {
-                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Share")
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
         }
     }
 }

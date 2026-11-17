@@ -82,28 +82,28 @@ fun SplashScreen() {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = Color.White,
-                modifier = Modifier.size(72.dp),
+                modifier = Modifier.size(56.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Outlined.PointOfSale,
                         contentDescription = "LoyPOS",
                         tint = LoyGreen,
-                        modifier = Modifier.size(38.dp),
+                        modifier = Modifier.size(30.dp),
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = "LoyPOS",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.height(12.dp))
-            CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.height(10.dp))
+            CircularProgressIndicator(color = Color.White, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
         }
     }
 }
@@ -138,7 +138,7 @@ fun AuthGateScreen(
                 .fillMaxWidth()
                 .background(headerBrush)
                 .statusBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                .padding(horizontal = 18.dp, vertical = 16.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -146,19 +146,20 @@ fun AuthGateScreen(
                     .align(Alignment.CenterStart),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(11.dp),
                     color = Color.White.copy(alpha = 0.2f),
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(40.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (isBackOffice) Icons.Outlined.AdminPanelSettings else Icons.Outlined.PointOfSale,
                             contentDescription = if (isBackOffice) "Back Office logo" else "LoyPOS logo",
                             tint = Color.White,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = when {
                         isBackOffice && showSignUpBo -> "Set up Back Office"
@@ -166,11 +167,11 @@ fun AuthGateScreen(
                         showSignUpPos -> "Set up your shop"
                         else -> "Welcome back"
                     },
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleLarge,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = when {
                         isBackOffice && showSignUpBo -> "Create a dedicated Back Office admin login separate from the POS register."
@@ -178,7 +179,7 @@ fun AuthGateScreen(
                         showSignUpPos -> "Create your owner account to start selling offline-first with 300 ready items."
                         else -> "Sign in as owner or seller to open the POS register."
                     },
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.9f),
                 )
             }
@@ -188,12 +189,12 @@ fun AuthGateScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(20.dp),
+                .padding(14.dp),
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(
                 modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     SegmentedButton(
@@ -201,28 +202,28 @@ fun AuthGateScreen(
                         onClick = { workspace = AppWorkspace.POS },
                         shape = SegmentedButtonDefaults.itemShape(0, 2),
                         icon = {
-                            Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(16.dp))
                         },
                         modifier = Modifier.testTag("auth_mode_pos"),
                     ) {
-                        Text("POS Register")
+                        Text("POS Register", style = MaterialTheme.typography.labelLarge)
                     }
                     SegmentedButton(
                         selected = isBackOffice,
                         onClick = { workspace = AppWorkspace.BACK_OFFICE },
                         shape = SegmentedButtonDefaults.itemShape(1, 2),
                         icon = {
-                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(16.dp))
                         },
                         modifier = Modifier.testTag("auth_mode_backoffice"),
                     ) {
-                        Text("Back Office")
+                        Text("Back Office", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(13.dp),
                     color = Color.White,
                     tonalElevation = 1.dp,
                 ) {
@@ -283,7 +284,7 @@ fun BackOfficeAuthScreen(
                 .fillMaxWidth()
                 .background(Brush.linearGradient(listOf(BackOfficeNavy, BackOfficeSlate)))
                 .statusBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 26.dp),
+                .padding(horizontal = 18.dp, vertical = 16.dp),
         ) {
             Column(
                 modifier = Modifier
@@ -292,18 +293,19 @@ fun BackOfficeAuthScreen(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(11.dp),
                         color = Color.White.copy(alpha = 0.16f),
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(40.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Outlined.AdminPanelSettings,
                                 contentDescription = "Back Office Auth",
                                 tint = Color.White,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                     }
@@ -316,25 +318,25 @@ fun BackOfficeAuthScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         )
                     }
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = if (showSignUp) "Set up Back Office Admin" else "$storeName · Back Office",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleLarge,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 Text(
                     text = if (showSignUp) {
                         "Create a dedicated Back Office password separate from POS register accounts."
                     } else {
                         "Authenticate to access Back Office dashboards, profit margins, stock controls, and admin settings."
                     },
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.88f),
                 )
             }
@@ -344,16 +346,16 @@ fun BackOfficeAuthScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(20.dp),
+                .padding(14.dp),
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(
                 modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(13.dp),
                     color = Color.White,
                     tonalElevation = 1.dp,
                 ) {
@@ -377,11 +379,11 @@ fun BackOfficeAuthScreen(
                         onClick = { viewModel.switchToPos() },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .height(42.dp)
                             .testTag("backoffice_auth_return_pos"),
                     ) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text("Return to POS Register")
                     }
                 }
@@ -402,8 +404,8 @@ private fun BackOfficeLoginForm(
     var error by remember { mutableStateOf<String?>(null) }
 
     Column(
-        modifier = Modifier.padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         OutlinedTextField(
             value = email,
@@ -449,11 +451,11 @@ private fun BackOfficeLoginForm(
             colors = ButtonDefaults.buttonColors(containerColor = BackOfficeNavy, contentColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(44.dp)
                 .testTag("bo_login_button"),
         ) {
             if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
             } else {
                 Text("Unlock Back Office")
             }
@@ -485,8 +487,8 @@ private fun BackOfficeSignUpForm(
     var error by remember { mutableStateOf<String?>(null) }
 
     Column(
-        modifier = Modifier.padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         OutlinedTextField(
             value = fullName,
@@ -567,11 +569,11 @@ private fun BackOfficeSignUpForm(
             colors = ButtonDefaults.buttonColors(containerColor = BackOfficeNavy, contentColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(44.dp)
                 .testTag("bo_signup_button"),
         ) {
             if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
             } else {
                 Text("Create Back Office Account")
             }
@@ -600,8 +602,8 @@ private fun LoginForm(
     var error by remember { mutableStateOf<String?>(null) }
 
     Column(
-        modifier = Modifier.padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         OutlinedTextField(
             value = email,
@@ -646,11 +648,11 @@ private fun LoginForm(
             enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(44.dp)
                 .testTag("login_button"),
         ) {
             if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
             } else {
                 Text("Sign in")
             }
@@ -681,8 +683,8 @@ private fun SignUpForm(
     var error by remember { mutableStateOf<String?>(null) }
 
     Column(
-        modifier = Modifier.padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         OutlinedTextField(
             value = shopName,
@@ -767,11 +769,11 @@ private fun SignUpForm(
             enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(44.dp)
                 .testTag("signup_button"),
         ) {
             if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
             } else {
                 Text("Create account")
             }

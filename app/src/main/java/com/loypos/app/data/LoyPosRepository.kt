@@ -50,9 +50,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.Calendar
 import java.util.Locale
+
+data class PleskSyncCounts(
+    val pushedRecords: Int = 0,
+    val pulledRecords: Int = 0,
+)
 
 class LoyPosRepository(private val context: Context) {
     private val db = LoyPosDatabase.getInstance(context)
@@ -1128,5 +1135,432 @@ class LoyPosRepository(private val context: Context) {
             dao.deleteShopSettings()
             LoyPosDatabase.seedDefaults(db)
         }
+    }
+
+    // --- Plesk MySQL Sync Snapshot & Merge ---
+    suspend fun exportPleskSyncPayload(sinceMs: Long): Pair<JSONObject, Int> = withContext(Dispatchers.IO) {
+        val incremental = sinceMs > 0L
+        val branches = dao.getAllBranches().let { list ->
+            if (incremental) list.filter { it.updatedAt >= sinceMs || it.createdAt >= sinceMs } else list
+        }
+        val categories = categoryDao.getAllCategories().let { list ->
+            if (incremental) list.filter { it.updatedAt >= sinceMs } else list
+        }
+        val products = productDao.getAllProducts().let { list ->
+            if (incremental) list.filter { it.updatedAt >= sinceMs } else list
+        }
+        val customers = dao.getAllCustomers().let { list ->
+            if (incremental) list.filter { it.updatedAt >= sinceMs || it.createdAt >= sinceMs } else list
+        }
+        val sales = saleDao.getAllSales().let { list ->
+            if (incremental) list.filter { it.updatedAt >= sinceMs || it.createdAt >= sinceMs } else list
+        }
+        val saleIds = sales.map { it.id }.toSet()
+        val allSaleItems = dao.getAllReceiptLines()
+        val saleItems = if (incremental) allSaleItems.filter { it.receiptId in saleIds } else allSaleItems
+        val movements = dao.getAllStockMovements().let { list ->
+            if (incremental) list.filter { it.createdAt >= sinceMs } else list
+        }
+        val shifts = dao.getAllShifts().let { list ->
+            if (incremental) list.filter { it.openedAt >= sinceMs || (it.closedAt ?: 0L) >= sinceMs } else list
+        }
+        val cashMoves = dao.getAllCashMovements().let { list ->
+            if (incremental) list.filter { it.createdAt >= sinceMs } else list
+        }
+        val syncableSettingKeys = setOf(
+            "store_name",
+            "currency_symbol",
+            "tax_rate",
+            "tax_included",
+            "receipt_footer",
+            "next_receipt_number",
+            "low_stock_alerts_enabled",
+            "low_stock_threshold",
+            "low_stock_interval_minutes",
+            "daily_revenue_target_cents",
+            "active_branch",
+        )
+        val settings = dao.getAllSettings().filter { it.key in syncableSettingKeys }
+
+        val root = JSONObject().apply {
+            put("since_ms", sinceMs)
+            put("client_time_ms", nowMs())
+            put("branches", JSONArray().apply {
+                branches.forEach { b ->
+                    put(JSONObject().apply {
+                        put("id", b.id)
+                        put("name", b.name)
+                        put("address", b.address)
+                        put("phone", b.phone)
+                        put("created_at", b.createdAt)
+                        put("archived", if (b.archived) 1 else 0)
+                        put("updated_at", b.updatedAt)
+                    })
+                }
+            })
+            put("categories", JSONArray().apply {
+                categories.forEach { c ->
+                    put(JSONObject().apply {
+                        put("id", c.id)
+                        put("name", c.name)
+                        put("position", c.position)
+                        put("updated_at", c.updatedAt)
+                    })
+                }
+            })
+            put("products", JSONArray().apply {
+                products.forEach { p ->
+                    put(JSONObject().apply {
+                        put("id", p.id)
+                        put("category_id", p.categoryId ?: JSONObject.NULL)
+                        put("name", p.name)
+                        put("price_cents", p.priceCents)
+                        put("cost_cents", p.costCents)
+                        put("sku", p.sku)
+                        put("barcode", p.barcode)
+                        put("track_stock", if (p.trackStock) 1 else 0)
+                        put("stock", p.stock)
+                        put("archived", if (p.archived) 1 else 0)
+                        put("branch_ids", p.branchIds)
+                        put("image_path", p.imagePath)
+                        put("updated_at", p.updatedAt)
+                    })
+                }
+            })
+            put("customers", JSONArray().apply {
+                customers.forEach { c ->
+                    put(JSONObject().apply {
+                        put("id", c.id)
+                        put("name", c.name)
+                        put("phone", c.phone)
+                        put("email", c.email)
+                        put("note", c.note)
+                        put("points", c.points)
+                        put("created_at", c.createdAt)
+                        put("updated_at", c.updatedAt)
+                    })
+                }
+            })
+            put("sales", JSONArray().apply {
+                sales.forEach { s ->
+                    put(JSONObject().apply {
+                        put("id", s.id)
+                        put("number", s.number)
+                        put("created_at", s.createdAt)
+                        put("subtotal_cents", s.subtotalCents)
+                        put("discount_cents", s.discountCents)
+                        put("discount_type", s.discountType ?: JSONObject.NULL)
+                        put("discount_value", s.discountValue ?: JSONObject.NULL)
+                        put("tax_cents", s.taxCents)
+                        put("total_cents", s.totalCents)
+                        put("paid_cents", s.paidCents)
+                        put("change_cents", s.changeCents)
+                        put("payment_type", s.paymentType)
+                        put("customer_id", s.customerId ?: JSONObject.NULL)
+                        put("customer_name", s.customerName ?: JSONObject.NULL)
+                        put("status", s.status)
+                        put("note", s.note)
+                        put("branch_id", s.branchId ?: JSONObject.NULL)
+                        put("cashier_id", s.cashierId ?: JSONObject.NULL)
+                        put("cashier_name", s.cashierName ?: JSONObject.NULL)
+                        put("updated_at", s.updatedAt)
+                    })
+                }
+            })
+            put("sale_items", JSONArray().apply {
+                saleItems.forEach { li ->
+                    put(JSONObject().apply {
+                        put("id", li.id)
+                        put("receipt_id", li.receiptId)
+                        put("item_id", li.itemId)
+                        put("name", li.name)
+                        put("price_cents", li.priceCents)
+                        put("qty", li.qty)
+                        put("line_total_cents", li.lineTotalCents)
+                    })
+                }
+            })
+            put("stock_movements", JSONArray().apply {
+                movements.forEach { m ->
+                    put(JSONObject().apply {
+                        put("id", m.id)
+                        put("item_id", m.itemId)
+                        put("qty", m.qty)
+                        put("type", m.type)
+                        put("created_at", m.createdAt)
+                        put("note", m.note)
+                        put("receipt_id", m.receiptId ?: JSONObject.NULL)
+                    })
+                }
+            })
+            put("shifts", JSONArray().apply {
+                shifts.forEach { sh ->
+                    put(JSONObject().apply {
+                        put("id", sh.id)
+                        put("opened_at", sh.openedAt)
+                        put("opening_float_cents", sh.openingFloatCents)
+                        put("branch_id", sh.branchId ?: JSONObject.NULL)
+                        put("closed_at", sh.closedAt ?: JSONObject.NULL)
+                        put("counted_cents", sh.countedCents ?: JSONObject.NULL)
+                        put("expected_cents", sh.expectedCents ?: JSONObject.NULL)
+                    })
+                }
+            })
+            put("cash_movements", JSONArray().apply {
+                cashMoves.forEach { cm ->
+                    put(JSONObject().apply {
+                        put("id", cm.id)
+                        put("shift_id", cm.shiftId)
+                        put("type", cm.type)
+                        put("amount_cents", cm.amountCents)
+                        put("note", cm.note)
+                        put("created_at", cm.createdAt)
+                    })
+                }
+            })
+            put("settings", JSONArray().apply {
+                settings.forEach { st ->
+                    put(JSONObject().apply {
+                        put("setting_key", st.key)
+                        put("setting_value", st.value)
+                    })
+                }
+            })
+        }
+
+        val count = branches.size + categories.size + products.size + customers.size +
+            sales.size + saleItems.size + movements.size + shifts.size + cashMoves.size
+        root to count
+    }
+
+    suspend fun applyPleskPullPayload(payload: JSONObject): Int = withContext(Dispatchers.IO) {
+        var applied = 0
+        db.withTransaction {
+            val branchesArr = payload.optJSONArray("branches") ?: JSONArray()
+            val localBranches = dao.getAllBranches().associateBy { it.id }
+            val branchesToUpsert = mutableListOf<BranchEntity>()
+            for (i in 0 until branchesArr.length()) {
+                val o = branchesArr.getJSONObject(i)
+                val id = o.getString("id")
+                val remoteUpdated = o.optLong("updated_at", 0L)
+                val existing = localBranches[id]
+                if (existing == null || remoteUpdated >= existing.updatedAt) {
+                    branchesToUpsert += BranchEntity(
+                        id = id,
+                        name = o.getString("name"),
+                        address = o.optString("address", ""),
+                        phone = o.optString("phone", ""),
+                        createdAt = o.optLong("created_at", nowMs()),
+                        archived = o.optInt("archived", 0) == 1 || o.optBoolean("archived", false),
+                        updatedAt = remoteUpdated,
+                    )
+                }
+            }
+            if (branchesToUpsert.isNotEmpty()) {
+                dao.upsertBranches(branchesToUpsert)
+                applied += branchesToUpsert.size
+            }
+
+            val catsArr = payload.optJSONArray("categories") ?: JSONArray()
+            val localCats = categoryDao.getAllCategories().associateBy { it.id }
+            val catsToUpsert = mutableListOf<CategoryEntity>()
+            for (i in 0 until catsArr.length()) {
+                val o = catsArr.getJSONObject(i)
+                val id = o.getString("id")
+                val remoteUpdated = o.optLong("updated_at", 0L)
+                val existing = localCats[id]
+                if (existing == null || remoteUpdated >= existing.updatedAt) {
+                    catsToUpsert += CategoryEntity(
+                        id = id,
+                        name = o.getString("name"),
+                        position = o.optInt("position", 0),
+                        updatedAt = remoteUpdated,
+                    )
+                }
+            }
+            if (catsToUpsert.isNotEmpty()) {
+                categoryDao.upsertCategories(catsToUpsert)
+                applied += catsToUpsert.size
+            }
+
+            val validCatIds = categoryDao.getAllCategories().map { it.id }.toSet()
+            val prodsArr = payload.optJSONArray("products") ?: JSONArray()
+            val localProds = productDao.getAllProducts().associateBy { it.id }
+            val prodsToUpsert = mutableListOf<ProductEntity>()
+            for (i in 0 until prodsArr.length()) {
+                val o = prodsArr.getJSONObject(i)
+                val id = o.getString("id")
+                val remoteUpdated = o.optLong("updated_at", 0L)
+                val existing = localProds[id]
+                if (existing == null || remoteUpdated >= existing.updatedAt) {
+                    val catId = o.optString("category_id", "").takeIf { it.isNotEmpty() && it in validCatIds }
+                    prodsToUpsert += ProductEntity(
+                        id = id,
+                        categoryId = catId,
+                        name = o.getString("name"),
+                        priceCents = o.optLong("price_cents", 0L),
+                        costCents = o.optLong("cost_cents", 0L),
+                        sku = o.optString("sku", ""),
+                        barcode = o.optString("barcode", ""),
+                        trackStock = o.optInt("track_stock", 0) == 1 || o.optBoolean("track_stock", false),
+                        stock = o.optDouble("stock", 0.0),
+                        archived = o.optInt("archived", 0) == 1 || o.optBoolean("archived", false),
+                        branchIds = o.optString("branch_ids", ""),
+                        imagePath = existing?.imagePath ?: o.optString("image_path", ""),
+                        updatedAt = remoteUpdated,
+                    )
+                }
+            }
+            if (prodsToUpsert.isNotEmpty()) {
+                productDao.upsertProducts(prodsToUpsert)
+                applied += prodsToUpsert.size
+            }
+
+            val custArr = payload.optJSONArray("customers") ?: JSONArray()
+            val localCusts = dao.getAllCustomers().associateBy { it.id }
+            val custsToUpsert = mutableListOf<CustomerEntity>()
+            for (i in 0 until custArr.length()) {
+                val o = custArr.getJSONObject(i)
+                val id = o.getString("id")
+                val remoteUpdated = o.optLong("updated_at", 0L)
+                val existing = localCusts[id]
+                if (existing == null || remoteUpdated >= existing.updatedAt) {
+                    custsToUpsert += CustomerEntity(
+                        id = id,
+                        name = o.getString("name"),
+                        phone = o.optString("phone", ""),
+                        email = o.optString("email", ""),
+                        note = o.optString("note", ""),
+                        points = o.optInt("points", 0),
+                        createdAt = o.optLong("created_at", nowMs()),
+                        updatedAt = remoteUpdated,
+                    )
+                }
+            }
+            if (custsToUpsert.isNotEmpty()) {
+                dao.upsertCustomers(custsToUpsert)
+                applied += custsToUpsert.size
+            }
+
+            val validCustIds = dao.getAllCustomers().map { it.id }.toSet()
+            val salesArr = payload.optJSONArray("sales") ?: JSONArray()
+            val localSales = saleDao.getAllSales().associateBy { it.id }
+            val salesToUpsert = mutableListOf<ReceiptEntity>()
+            for (i in 0 until salesArr.length()) {
+                val o = salesArr.getJSONObject(i)
+                val id = o.getString("id")
+                val remoteUpdated = o.optLong("updated_at", 0L)
+                val existing = localSales[id]
+                if (existing == null || remoteUpdated >= existing.updatedAt) {
+                    val custId = o.optString("customer_id", "").takeIf { it.isNotEmpty() && it in validCustIds }
+                    salesToUpsert += ReceiptEntity(
+                        id = id,
+                        number = o.optInt("number", 1),
+                        createdAt = o.optLong("created_at", nowMs()),
+                        subtotalCents = o.optLong("subtotal_cents", 0L),
+                        discountCents = o.optLong("discount_cents", 0L),
+                        discountType = o.optString("discount_type", "").takeIf { it.isNotEmpty() },
+                        discountValue = if (o.isNull("discount_value")) null else o.optDouble("discount_value"),
+                        taxCents = o.optLong("tax_cents", 0L),
+                        totalCents = o.optLong("total_cents", 0L),
+                        paidCents = o.optLong("paid_cents", 0L),
+                        changeCents = o.optLong("change_cents", 0L),
+                        paymentType = o.optString("payment_type", "cash"),
+                        customerId = custId,
+                        customerName = o.optString("customer_name", "").takeIf { it.isNotEmpty() },
+                        status = o.optString("status", "completed"),
+                        note = o.optString("note", ""),
+                        branchId = o.optString("branch_id", "").takeIf { it.isNotEmpty() },
+                        cashierId = o.optString("cashier_id", "").takeIf { it.isNotEmpty() },
+                        cashierName = o.optString("cashier_name", "").takeIf { it.isNotEmpty() },
+                        updatedAt = remoteUpdated,
+                    )
+                }
+            }
+            if (salesToUpsert.isNotEmpty()) {
+                dao.upsertReceipts(salesToUpsert)
+                applied += salesToUpsert.size
+            }
+
+            val validSaleIds = saleDao.getAllSales().map { it.id }.toSet()
+            val saleItemsArr = payload.optJSONArray("sale_items") ?: JSONArray()
+            val linesToInsert = mutableListOf<ReceiptLineEntity>()
+            for (i in 0 until saleItemsArr.length()) {
+                val o = saleItemsArr.getJSONObject(i)
+                val receiptId = o.getString("receipt_id")
+                if (receiptId in validSaleIds) {
+                    linesToInsert += ReceiptLineEntity(
+                        id = o.getString("id"),
+                        receiptId = receiptId,
+                        itemId = o.getString("item_id"),
+                        name = o.getString("name"),
+                        priceCents = o.optLong("price_cents", 0L),
+                        qty = o.optDouble("qty", 1.0),
+                        lineTotalCents = o.optLong("line_total_cents", 0L),
+                    )
+                }
+            }
+            if (linesToInsert.isNotEmpty()) {
+                saleItemDao.insertSaleItems(linesToInsert)
+                applied += linesToInsert.size
+            }
+
+            val movesArr = payload.optJSONArray("stock_movements") ?: JSONArray()
+            val movesToInsert = mutableListOf<StockMovementEntity>()
+            for (i in 0 until movesArr.length()) {
+                val o = movesArr.getJSONObject(i)
+                movesToInsert += StockMovementEntity(
+                    id = o.getString("id"),
+                    itemId = o.getString("item_id"),
+                    qty = o.optDouble("qty", 0.0),
+                    type = o.optString("type", "adjust"),
+                    createdAt = o.optLong("created_at", nowMs()),
+                    note = o.optString("note", ""),
+                    receiptId = o.optString("receipt_id", "").takeIf { it.isNotEmpty() },
+                )
+            }
+            if (movesToInsert.isNotEmpty()) {
+                dao.insertStockMovements(movesToInsert)
+                applied += movesToInsert.size
+            }
+
+            val shiftsArr = payload.optJSONArray("shifts") ?: JSONArray()
+            val shiftsToUpsert = mutableListOf<ShiftEntity>()
+            for (i in 0 until shiftsArr.length()) {
+                val o = shiftsArr.getJSONObject(i)
+                shiftsToUpsert += ShiftEntity(
+                    id = o.getString("id"),
+                    openedAt = o.optLong("opened_at", nowMs()),
+                    openingFloatCents = o.optLong("opening_float_cents", 0L),
+                    branchId = o.optString("branch_id", "").takeIf { it.isNotEmpty() },
+                    closedAt = if (o.isNull("closed_at")) null else o.optLong("closed_at"),
+                    countedCents = if (o.isNull("counted_cents")) null else o.optLong("counted_cents"),
+                    expectedCents = if (o.isNull("expected_cents")) null else o.optLong("expected_cents"),
+                )
+            }
+            if (shiftsToUpsert.isNotEmpty()) {
+                dao.upsertShifts(shiftsToUpsert)
+                applied += shiftsToUpsert.size
+            }
+
+            val cashArr = payload.optJSONArray("cash_movements") ?: JSONArray()
+            val cashToInsert = mutableListOf<CashMovementEntity>()
+            for (i in 0 until cashArr.length()) {
+                val o = cashArr.getJSONObject(i)
+                cashToInsert += CashMovementEntity(
+                    id = o.getString("id"),
+                    shiftId = o.getString("shift_id"),
+                    type = o.optString("type", "in"),
+                    amountCents = o.optLong("amount_cents", 0L),
+                    note = o.optString("note", ""),
+                    createdAt = o.optLong("created_at", nowMs()),
+                )
+            }
+            if (cashToInsert.isNotEmpty()) {
+                dao.insertCashMovements(cashToInsert)
+                applied += cashToInsert.size
+            }
+        }
+        applied
     }
 }

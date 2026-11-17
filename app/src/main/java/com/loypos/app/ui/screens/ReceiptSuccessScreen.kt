@@ -81,17 +81,17 @@ fun ReceiptSuccessScreen(
             .background(LoyBackground)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(20.dp),
+            .padding(14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(72.dp)
+                    .size(54.dp)
                     .clip(CircleShape)
                     .background(LoyGreenLight),
                 contentAlignment = Alignment.Center,
@@ -100,7 +100,7 @@ fun ReceiptSuccessScreen(
                     Icons.Outlined.Check,
                     contentDescription = "Sale completed",
                     tint = LoyGreen,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(28.dp),
                 )
             }
 
@@ -111,23 +111,23 @@ fun ReceiptSuccessScreen(
                     fontWeight = FontWeight.Bold,
                     color = LoyTextPrimary,
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     text = "Total paid (${r.paymentType})",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = LoyTextSecondary,
                 )
             }
 
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(11.dp),
                 color = LoySurface,
                 border = BorderStroke(1.dp, LoyBorder),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Receipt", color = LoyTextSecondary)
@@ -158,22 +158,22 @@ fun ReceiptSuccessScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(
                     onClick = { viewModel.shareReceiptText(currentReceipt) },
-                    modifier = Modifier.weight(1f).height(50.dp).testTag("receipt_share_text_button"),
+                    modifier = Modifier.weight(1f).height(42.dp).testTag("receipt_share_text_button"),
                 ) {
-                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
                     Text("Share")
                 }
                 OutlinedButton(
                     onClick = { showPdfPreview = true },
-                    modifier = Modifier.weight(1f).height(50.dp).testTag("receipt_share_pdf_button"),
+                    modifier = Modifier.weight(1f).height(42.dp).testTag("receipt_share_pdf_button"),
                 ) {
-                    Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Outlined.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
                     Text("Preview PDF")
                 }
             }
@@ -182,7 +182,7 @@ fun ReceiptSuccessScreen(
                 onClick = onDone,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(44.dp)
                     .testTag("receipt_done_button"),
             ) {
                 Text("New Sale")

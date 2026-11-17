@@ -383,14 +383,26 @@ interface LoyPosDao {
     @Query("SELECT * FROM shifts ORDER BY opened_at DESC")
     fun observeShifts(): Flow<List<ShiftEntity>>
 
+    @Query("SELECT * FROM shifts ORDER BY opened_at DESC")
+    suspend fun getAllShifts(): List<ShiftEntity>
+
     @Query("SELECT * FROM cash_movements ORDER BY created_at DESC")
     fun observeCashMovements(): Flow<List<CashMovementEntity>>
+
+    @Query("SELECT * FROM cash_movements ORDER BY created_at DESC")
+    suspend fun getAllCashMovements(): List<CashMovementEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertShift(shift: ShiftEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertShifts(shifts: List<ShiftEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCashMovement(movement: CashMovementEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCashMovements(movements: List<CashMovementEntity>)
 
     @Query("UPDATE shifts SET closed_at = :closedAt, counted_cents = :countedCents, expected_cents = :expectedCents WHERE id = :id")
     suspend fun closeShift(id: String, closedAt: Long, countedCents: Long, expectedCents: Long)

@@ -2,33 +2,36 @@ package com.loypos.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Backspace
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Checkroom
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.FaceRetouchingNatural
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalFlorist
 import androidx.compose.material.icons.outlined.Sanitizer
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Spa
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
@@ -36,6 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -67,8 +72,155 @@ import com.loypos.app.ui.theme.LoyTextPrimary
 import com.loypos.app.ui.theme.LoyTextSecondary
 import com.loypos.app.ui.theme.LoyWarning
 import com.loypos.app.ui.theme.TabularMoneyStyle
+import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.accessibleTouchTarget
 import com.loypos.app.ui.theme.tileColorFor
 import java.io.File
+
+data class CompactNavEntry(
+    val label: String,
+    val icon: ImageVector,
+    val selected: Boolean,
+    val tag: String,
+    val onClick: () -> Unit,
+)
+
+@Composable
+fun CompactBottomNavBar(
+    entries: List<CompactNavEntry>,
+    selectedColor: Color,
+    indicatorColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val metrics = LocalLoyMetrics.current
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = LoySurface,
+        tonalElevation = 2.dp,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+            HorizontalDivider(color = LoyBorder)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = metrics.minTouchTarget.coerceAtLeast(52.dp)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                entries.forEach { entry ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = metrics.minTouchTarget)
+                            .clickable(onClick = entry.onClick)
+                            .padding(horizontal = 2.dp, vertical = 4.dp)
+                            .testTag(entry.tag),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(if (entry.selected) indicatorColor else Color.Transparent)
+                                .padding(horizontal = 11.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = entry.icon,
+                                contentDescription = entry.label,
+                                tint = if (entry.selected) selectedColor else LoyTextSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = entry.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (entry.selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (entry.selected) selectedColor else LoyTextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    inputTestTag: String? = null,
+    clearTestTag: String? = null,
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = LoySurfaceVariant,
+        border = BorderStroke(1.dp, LoyBorder),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(38.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = "Search",
+                tint = LoyTextSecondary,
+                modifier = Modifier.size(17.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (value.isEmpty()) {
+                    Text(
+                        text = placeholder,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LoyTextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = LoyTextPrimary),
+                    cursorBrush = SolidColor(LoyGreen),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (inputTestTag != null) Modifier.testTag(inputTestTag) else Modifier),
+                )
+            }
+            if (value.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable { onValueChange("") }
+                        .then(if (clearTestTag != null) Modifier.testTag(clearTestTag) else Modifier),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Clear search",
+                        tint = LoyTextSecondary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+    }
+}
 
 fun categoryIconFor(categoryId: String?): ImageVector = when (categoryId) {
     "cat-shampoo" -> Icons.Outlined.Sanitizer
@@ -85,14 +237,14 @@ fun categoryIconFor(categoryId: String?): ImageVector = when (categoryId) {
 @Composable
 fun ItemThumbnail(
     item: ItemEntity,
-    size: Dp = 44.dp,
+    size: Dp = 36.dp,
     modifier: Modifier = Modifier,
 ) {
     val tint = tileColorFor(item.categoryId ?: item.name)
     Box(
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(tint.copy(alpha = 0.14f)),
         contentAlignment = Alignment.Center,
     ) {
@@ -108,7 +260,7 @@ fun ItemThumbnail(
                 imageVector = categoryIconFor(item.categoryId),
                 contentDescription = item.name,
                 tint = tint,
-                modifier = Modifier.size(size * 0.52f),
+                modifier = Modifier.size(size * 0.5f),
             )
         }
     }
@@ -129,11 +281,11 @@ fun StockDotBadge(
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(7.dp)
+                .size(6.dp)
                 .clip(CircleShape)
                 .background(dotColor)
         )
@@ -164,7 +316,7 @@ fun PillBadge(
             style = MaterialTheme.typography.labelSmall,
             color = textColor,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             maxLines = 1,
         )
     }
@@ -178,7 +330,7 @@ fun GroupCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = LoySurface,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(11.dp),
         border = BorderStroke(1.dp, LoyBorder),
     ) {
         Column(modifier = Modifier.fillMaxWidth(), content = content)
@@ -195,7 +347,7 @@ fun SectionHeader(
         style = MaterialTheme.typography.labelSmall,
         color = LoyTextSecondary,
         fontWeight = FontWeight.SemiBold,
-        modifier = modifier.padding(start = 4.dp, top = 16.dp, bottom = 6.dp),
+        modifier = modifier.padding(start = 2.dp, top = 8.dp, bottom = 4.dp),
     )
 }
 
@@ -208,9 +360,9 @@ fun StatBlock(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(9.dp))
             .background(LoySurfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
     ) {
         Text(
             text = label,
@@ -219,7 +371,7 @@ fun StatBlock(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(2.dp))
         Text(
             text = value,
             style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
@@ -243,13 +395,13 @@ fun EmptyState(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(32.dp),
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(LoyGreenLight),
             contentAlignment = Alignment.Center,
@@ -258,28 +410,29 @@ fun EmptyState(
                 imageVector = icon,
                 contentDescription = null,
                 tint = LoyGreen,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(24.dp),
             )
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             color = LoyTextPrimary,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             text = subtitle,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodySmall,
             color = LoyTextSecondary,
             textAlign = TextAlign.Center,
         )
         if (actionLabel != null && onAction != null) {
-            Spacer(Modifier.height(16.dp))
+            val metrics = LocalLoyMetrics.current
+            Spacer(Modifier.height(12.dp))
             FilledTonalButton(
                 onClick = onAction,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.heightIn(min = metrics.minTouchTarget),
             ) {
                 Text(actionLabel)
             }
@@ -301,14 +454,15 @@ fun CurrencyNumPad(
         listOf("7", "8", "9"),
         listOf(if (allowDecimal) "." else "C", "0", "BACK"),
     )
+    val metrics = LocalLoyMetrics.current
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         rows.forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 row.forEach { key ->
                     val tag = when (key) {
@@ -320,9 +474,9 @@ fun CurrencyNumPad(
                     Surface(
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
+                            .heightIn(min = metrics.minTouchTarget)
                             .testTag(tag)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(8.dp))
                             .clickable {
                                 when (key) {
                                     "BACK" -> onBackspace()
@@ -331,7 +485,7 @@ fun CurrencyNumPad(
                                 }
                             },
                         color = LoySurfaceVariant,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(1.dp, LoyBorder),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -340,11 +494,12 @@ fun CurrencyNumPad(
                                     imageVector = Icons.AutoMirrored.Outlined.Backspace,
                                     contentDescription = "Backspace",
                                     tint = LoyTextPrimary,
+                                    modifier = Modifier.size(18.dp),
                                 )
                             } else {
                                 Text(
                                     text = key,
-                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleLarge),
+                                    style = TabularMoneyStyle.merge(MaterialTheme.typography.titleMedium),
                                     color = LoyTextPrimary,
                                     fontWeight = FontWeight.SemiBold,
                                 )
@@ -366,6 +521,7 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val metrics = LocalLoyMetrics.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, fontWeight = FontWeight.SemiBold) },
@@ -378,7 +534,7 @@ fun ConfirmDialog(
                     contentColor = Color.White,
                 ),
                 modifier = Modifier
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = metrics.minTouchTarget)
                     .testTag("confirm_dialog_ok"),
             ) {
                 Text(confirmLabel)
@@ -388,7 +544,7 @@ fun ConfirmDialog(
             TextButton(
                 onClick = onDismiss,
                 modifier = Modifier
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = metrics.minTouchTarget)
                     .testTag("confirm_dialog_cancel"),
             ) {
                 Text("Cancel")
@@ -403,24 +559,26 @@ fun TopSyncIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val metrics = LocalLoyMetrics.current
     IconButton(
         onClick = onClick,
         enabled = !syncing,
         modifier = modifier
-            .size(48.dp)
+            .accessibleTouchTarget(metrics.minTouchTarget)
             .testTag("sync_button"),
     ) {
         if (syncing) {
             CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
                 color = LoyGreen,
             )
         } else {
             Icon(
                 imageVector = Icons.Outlined.CloudSync,
-                contentDescription = "Sync with cloud",
+                contentDescription = "Sync with Plesk MySQL",
                 tint = LoyTextPrimary,
+                modifier = Modifier.size(19.dp),
             )
         }
     }
