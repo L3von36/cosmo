@@ -11,7 +11,14 @@
 
 header('Content-Type: application/json; charset=utf-8');
 
-require_once __DIR__ . '/config.php';
+if (!file_exists(__DIR__ . '/config.php')) {
+    http_response_code(503);
+    echo json_encode(['error' => 'Server not configured: copy config.example.php to config.php']);
+    exit;
+}
+
+// config.php returns the same array used by index.php
+$config = require __DIR__ . '/config.php';
 
 // 1. Authenticate Request via Bearer Token or App Check Signature
 $headers = getallheaders();
@@ -25,7 +32,8 @@ if (preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
     $token = $syncTokenHeader;
 }
 
-if (!hash_equals(SYNC_TOKEN, $token)) {
+$expectedToken = (string)($config['sync_token'] ?? '');
+if ($expectedToken === '' || !hash_equals($expectedToken, $token)) {
     http_response_code(401);
     echo json_encode(['error' => 'Unauthorized: Invalid or missing secure sync token']);
     exit;
@@ -34,9 +42,14 @@ if (!hash_equals(SYNC_TOKEN, $token)) {
 // 2. Forward request or handle business logic securely via PDO
 try {
     $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
+        sprintf(
+            'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+            (string)($config['db_host'] ?? 'localhost'),
+            (int)($config['db_port'] ?? 3306),
+            (string)($config['db_name'] ?? '')
+        ),
+        (string)($config['db_user'] ?? ''),
+        (string)($config['db_pass'] ?? ''),
         [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
