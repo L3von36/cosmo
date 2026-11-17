@@ -13,8 +13,10 @@ android {
         applicationId = "com.aistudio.loypos.kxzmpq"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        val propVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull()
+        val propVersionName = providers.gradleProperty("versionName").orNull?.takeIf { it.isNotBlank() }
+        versionCode = propVersionCode ?: 1
+        versionName = propVersionName ?: "1.0.0"
     }
 
     signingConfigs {
