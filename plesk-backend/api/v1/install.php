@@ -266,6 +266,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!is_file($cfgPath) || $overwriteCfg) {
                 file_put_contents($cfgPath, $php, LOCK_EX);
                 @chmod($cfgPath, 0640);
+                // Make sure PHP-FPM/CGI picks up the new config.php even on hosts
+                // with opcache.validate_timestamps=0
+                if (function_exists('opcache_reset')) {
+                    @opcache_reset();
+                }
                 $results[] = ['config.php', $overwriteCfg ? 'overwritten' : 'written', 'ok', 'sync_token: ' . ($generatedToken ? 'auto-generated (shown below)' : ($tokenKept ? 'kept from saved config.php' : 'kept from your input'))];
             } else {
                 $results[] = ['config.php', 'already exists — left untouched', 'warn', 'tick "Overwrite config.php" to replace it'];
