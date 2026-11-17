@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -22,33 +23,52 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.automirrored.outlined.Backspace
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.FaceRetouchingNatural
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalFlorist
+import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Sanitizer
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import com.loypos.app.core.formatQty
+import com.loypos.app.core.parseQty
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -583,3 +603,297 @@ fun TopSyncIconButton(
         }
     }
 }
+
+@Composable
+fun InventoryStockAlertSettingsDialog(
+    initialEnabled: Boolean,
+    initialThreshold: Double,
+    initialIntervalMinutes: Long,
+    onSave: (enabled: Boolean, threshold: Double, intervalMinutes: Long) -> Unit,
+    onTestCheckNow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var enabled by remember { mutableStateOf(initialEnabled) }
+    var thresholdText by remember { mutableStateOf(formatQty(initialThreshold)) }
+    var selectedInterval by remember { mutableLongStateOf(initialIntervalMinutes.coerceAtLeast(15L)) }
+    val parsedThreshold = parseQty(thresholdText)
+    val metrics = LocalLoyMetrics.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    imageVector = Icons.Outlined.NotificationsActive,
+                    contentDescription = null,
+                    tint = LoyGreen,
+                    modifier = Modifier.size(24.dp),
+                )
+                Text(
+                    "Stock Alerts & Monitor",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "WorkManager automatically checks inventory in the background and sends an Android system notification when products drop below your threshold.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LoyTextSecondary,
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (enabled) LoyGreenLight.copy(alpha = 0.5f) else LoySurfaceVariant,
+                    border = BorderStroke(1.dp, if (enabled) LoyGreen else LoyBorder),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Background Alerts", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (enabled) "Periodic scan active" else "Alerts turned off",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (enabled) LoyGreen else LoyTextSecondary,
+                            )
+                        }
+                        Switch(
+                            checked = enabled,
+                            onCheckedChange = { enabled = it },
+                            modifier = Modifier.testTag("stock_alerts_dialog_switch"),
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Low Stock Threshold (units)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = thresholdText,
+                        onValueChange = { thresholdText = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("stock_threshold_input"),
+                        label = { Text("Minimum quantity") },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(1.0, 3.0, 5.0, 10.0).forEach { qty ->
+                            FilterChip(
+                                selected = parsedThreshold == qty,
+                                onClick = { thresholdText = formatQty(qty) },
+                                label = { Text(formatQty(qty)) },
+                                modifier = Modifier.height(30.dp),
+                            )
+                        }
+                    }
+                }
+
+                if (enabled) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Check Frequency", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(15L to "15m", 30L to "30m", 60L to "1h", 240L to "4h").forEach { (mins, label) ->
+                                FilterChip(
+                                    selected = selectedInterval == mins,
+                                    onClick = { selectedInterval = mins },
+                                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                    modifier = Modifier.height(30.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onTestCheckNow,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp).testTag("stock_alerts_test_now"),
+                ) {
+                    Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Run Stock Check Now", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val threshold = parsedThreshold ?: 3.0
+                    onSave(enabled, threshold, selectedInterval)
+                },
+                enabled = parsedThreshold != null,
+                colors = ButtonDefaults.buttonColors(containerColor = LoyGreen),
+                modifier = Modifier.heightIn(min = metrics.minTouchTarget).testTag("stock_alerts_dialog_save"),
+            ) {
+                Text("Save Settings")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.heightIn(min = metrics.minTouchTarget),
+            ) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+fun InventoryStockMonitorBanner(
+    alertsEnabled: Boolean,
+    threshold: Double,
+    lowCount: Int,
+    outOfStockCount: Int,
+    workerStatus: String,
+    onConfigureClick: () -> Unit,
+    onCheckNowClick: () -> Unit,
+    onFilterLowStockClick: () -> Unit,
+    isFilterActive: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val hasAlert = lowCount > 0 || outOfStockCount > 0
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = when {
+            outOfStockCount > 0 -> Color(0xFFFFF3F0)
+            hasAlert -> Color(0xFFFFF8E1)
+            else -> LoySurface
+        },
+        border = BorderStroke(
+            1.dp,
+            when {
+                outOfStockCount > 0 -> LoyError.copy(alpha = 0.5f)
+                hasAlert -> LoyWarning.copy(alpha = 0.6f)
+                else -> LoyBorder
+            }
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            when {
+                                outOfStockCount > 0 -> LoyError.copy(alpha = 0.15f)
+                                hasAlert -> LoyWarning.copy(alpha = 0.2f)
+                                else -> LoyGreenLight
+                            }
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = when {
+                            outOfStockCount > 0 -> Icons.Outlined.WarningAmber
+                            hasAlert -> Icons.Outlined.NotificationsActive
+                            else -> Icons.Outlined.CheckCircle
+                        },
+                        contentDescription = null,
+                        tint = when {
+                            outOfStockCount > 0 -> LoyError
+                            hasAlert -> LoyWarning
+                            else -> LoyGreen
+                        },
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = when {
+                            outOfStockCount > 0 && lowCount > 0 -> "$outOfStockCount out of stock · $lowCount low stock"
+                            outOfStockCount > 0 -> "$outOfStockCount products out of stock"
+                            hasAlert -> "$lowCount ${if (lowCount == 1) "item" else "items"} below ${formatQty(threshold)} threshold"
+                            else -> "All tracked items healthy (≥ ${formatQty(threshold)})"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = when {
+                            outOfStockCount > 0 -> LoyError
+                            hasAlert -> Color(0xFFB78103)
+                            else -> LoyGreen
+                        },
+                    )
+                    Text(
+                        text = "Background check: $workerStatus · ${if (alertsEnabled) "Active" else "Disabled"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                }
+
+                IconButton(
+                    onClick = onConfigureClick,
+                    modifier = Modifier.size(36.dp).testTag("inventory_stock_monitor_tune"),
+                ) {
+                    Icon(
+                        Icons.Outlined.Tune,
+                        contentDescription = "Configure Stock Alerts",
+                        tint = LoyTextSecondary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+
+            // Action row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (hasAlert) {
+                    FilterChip(
+                        selected = isFilterActive,
+                        onClick = onFilterLowStockClick,
+                        label = {
+                            Text(
+                                if (isFilterActive) "Showing Low Stock" else "Filter Low (${lowCount + outOfStockCount})",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = if (outOfStockCount > 0) Color(0xFFFFEBEE) else Color(0xFFFFF8E1),
+                            selectedLabelColor = if (outOfStockCount > 0) LoyError else Color(0xFFB78103),
+                        ),
+                        modifier = Modifier.height(28.dp).testTag("inventory_show_low_chip"),
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onCheckNowClick,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp).testTag("inventory_run_check_btn"),
+                ) {
+                    Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Check Stock Now", style = MaterialTheme.typography.labelSmall)
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                TextButton(
+                    onClick = onConfigureClick,
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp),
+                ) {
+                    Text("< ${formatQty(threshold)} threshold", style = MaterialTheme.typography.labelSmall, color = LoyGreen)
+                }
+            }
+        }
+    }
+}
+

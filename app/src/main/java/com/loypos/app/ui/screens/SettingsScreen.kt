@@ -38,6 +38,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.HealthAndSafety
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PeopleOutline
@@ -272,6 +273,14 @@ fun SettingsScreen(
                             Spacer(Modifier.width(6.dp))
                             Text("Sign out", color = LoyError)
                         }
+                        HorizontalDivider(color = LoyBorder)
+                        SettingsNavRow(
+                            icon = Icons.Outlined.HelpOutline,
+                            title = "Getting Started Walkthrough",
+                            subtitle = "Interactive guide to manage products and check out",
+                            onClick = { viewModel.showWalkthrough() },
+                            modifier = Modifier.testTag("settings_walkthrough_row"),
+                        )
                     }
                 }
             }
@@ -651,6 +660,15 @@ fun SettingsScreen(
                         iconTint = BackOfficeTeal,
                         onClick = { showTokenDialog = true },
                         modifier = Modifier.testTag("settings_configure_token_row"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
+                        icon = Icons.Outlined.Download,
+                        title = "Check for GitHub App Updates",
+                        subtitle = "Query GitHub Releases API for newer APK version",
+                        iconTint = LoyGreen,
+                        onClick = { viewModel.checkForAppUpdatesNow() },
+                        modifier = Modifier.testTag("settings_check_github_updates"),
                     )
                 }
             }

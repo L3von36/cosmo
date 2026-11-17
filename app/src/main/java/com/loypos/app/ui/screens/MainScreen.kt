@@ -22,8 +22,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import com.loypos.app.ui.AuthStage
 import com.loypos.app.ui.components.CompactBottomNavBar
 import com.loypos.app.ui.components.CompactNavEntry
+import com.loypos.app.ui.components.GettingStartedOverlay
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -105,11 +107,10 @@ fun MainScreen(
     LaunchedEffect(session.navigateToLowStockTrigger, isOwner) {
         if (session.navigateToLowStockTrigger > 0) {
             if (isOwner) {
-                navController.navigate(StockRoute) {
+                navController.navigate(InventoryRoute) {
                     launchSingleTop = true
                 }
             }
-            viewModel.consumeLowStockNavigation()
         }
     }
 
@@ -357,8 +358,24 @@ fun MainScreen(
                                 onBack = { navController.popBackStack() },
                             )
                         }
+                    }
                 }
             }
         }
+
+    if (session.showWalkthrough || (!data.settings.hasSeenWalkthrough && session.authStage == AuthStage.LOGGED_IN)) {
+        GettingStartedOverlay(
+            onDismiss = {
+                viewModel.setWalkthroughCompleted(true)
+            },
+            onNavigateToInventory = {
+                viewModel.setWalkthroughCompleted(true)
+                navigateToTopLevel(InventoryRoute)
+            },
+            onNavigateToCheckout = {
+                viewModel.setWalkthroughCompleted(true)
+                navigateToTopLevel(CheckoutRoute)
+            },
+        )
     }
 }

@@ -1,6 +1,9 @@
 package com.loypos.app.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,9 +40,15 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.ImportExport
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalOffer
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Remove
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -93,10 +102,15 @@ import com.loypos.app.data.local.ProductEntity
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import com.loypos.app.ui.components.CompactSearchField
 import com.loypos.app.ui.components.EmptyState
 import com.loypos.app.ui.components.GroupCard
 import com.loypos.app.ui.components.InventoryCsvSheet
+import com.loypos.app.ui.components.InventoryStockAlertSettingsDialog
+import com.loypos.app.ui.components.InventoryStockMonitorBanner
 import com.loypos.app.ui.components.ItemThumbnail
 import com.loypos.app.ui.components.StockDotBadge
 import com.loypos.app.ui.components.TopSyncIconButton
@@ -107,6 +121,7 @@ import com.loypos.app.ui.theme.LoyError
 import com.loypos.app.ui.theme.LoyGreen
 import com.loypos.app.ui.theme.LoySurface
 import com.loypos.app.ui.theme.LoyTextSecondary
+import com.loypos.app.ui.theme.LoyWarning
 import com.loypos.app.ui.theme.TabularMoneyStyle
 import com.loypos.app.ui.theme.tileColorFor
 import java.io.File
@@ -129,9 +144,41 @@ fun InventoryScreen(
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var isCreatingCategory by remember { mutableStateOf(false) }
     var showCsvSheet by remember { mutableStateOf(false) }
+    var showStockAlertSettingsDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.updateLowStockAlertSettings(
+                enabled = true,
+                threshold = data.settings.lowStockThreshold,
+                intervalMinutes = data.settings.lowStockIntervalMinutes,
+            )
+        } else {
+            viewModel.showMessage("Notification permission is needed for background stock alerts")
+        }
+    }
+
+    LaunchedEffect(session.initialFilterLowStock) {
+        if (session.initialFilterLowStock) {
+            lowStockOnly = true
+            tabIndex = 0
+            viewModel.consumeLowStockNavigation()
+        }
+    }
 
     val sym = data.settings.currencySymbol
     val threshold = data.settings.lowStockThreshold
+    val outOfStockCount = remember(roomProducts) {
+        roomProducts.count { it.trackStock && it.stock <= 0.0 }
+    }
+    val lowStockCount = remember(roomProducts, threshold) {
+        roomProducts.count { it.trackStock && it.stock > 0.0 && it.stock < threshold }
+    }
+    val totalLowCount = outOfStockCount + lowStockCount
+
     val filteredProducts = remember(roomProducts, selectedCategoryFilter, lowStockOnly, threshold) {
         roomProducts.filter { product ->
             val matchesCat = selectedCategoryFilter == null || product.categoryId == selectedCategoryFilter
@@ -154,6 +201,27 @@ fun InventoryScreen(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = LoySurface),
                     actions = {
+                        IconButton(
+                            onClick = { showStockAlertSettingsDialog = true },
+                            modifier = Modifier.size(42.dp).testTag("inventory_stock_alert_button"),
+                        ) {
+                            BadgedBox(
+                                badge = {
+                                    if (totalLowCount > 0) {
+                                        Badge(containerColor = if (outOfStockCount > 0) LoyError else LoyWarning) {
+                                            Text("$totalLowCount")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = if (data.settings.lowStockAlertsEnabled) Icons.Outlined.NotificationsActive else Icons.Outlined.Notifications,
+                                    contentDescription = "Stock Alert Settings",
+                                    tint = if (totalLowCount > 0) (if (outOfStockCount > 0) LoyError else LoyWarning) else LoyGreen,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = { showCsvSheet = true },
                             modifier = Modifier.size(42.dp).testTag("inventory_csv_button"),
@@ -301,6 +369,24 @@ fun InventoryScreen(
                         }
                     }
                     HorizontalDivider(color = LoyBorder)
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        InventoryStockMonitorBanner(
+                            alertsEnabled = data.settings.lowStockAlertsEnabled,
+                            threshold = threshold,
+                            lowCount = lowStockCount,
+                            outOfStockCount = outOfStockCount,
+                            workerStatus = session.lowStockWorkerStatus,
+                            onConfigureClick = { showStockAlertSettingsDialog = true },
+                            onCheckNowClick = { viewModel.runLowStockCheckNow() },
+                            onFilterLowStockClick = { lowStockOnly = !lowStockOnly },
+                            isFilterActive = lowStockOnly,
+                        )
+                    }
 
                     if (filteredProducts.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -496,6 +582,31 @@ fun InventoryScreen(
             viewModel = viewModel,
             data = data,
             onDismiss = { showCsvSheet = false },
+        )
+    }
+
+    if (showStockAlertSettingsDialog) {
+        InventoryStockAlertSettingsDialog(
+            initialEnabled = data.settings.lowStockAlertsEnabled,
+            initialThreshold = data.settings.lowStockThreshold,
+            initialIntervalMinutes = data.settings.lowStockIntervalMinutes,
+            onSave = { enabled, newThreshold, interval ->
+                if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val hasPerm = ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (!hasPerm) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+                viewModel.updateLowStockAlertSettings(enabled, newThreshold, interval)
+                showStockAlertSettingsDialog = false
+            },
+            onTestCheckNow = {
+                viewModel.runLowStockCheckNow()
+            },
+            onDismiss = { showStockAlertSettingsDialog = false },
         )
     }
 }
@@ -725,6 +836,38 @@ private fun ProductEditorBottomSheet(
                         modifier = Modifier.size(48.dp),
                     ) {
                         Icon(Icons.Outlined.Add, contentDescription = "Increase stock")
+                    }
+                }
+
+                val curStock = parseQty(stockText) ?: 0.0
+                if (curStock < data.settings.lowStockThreshold) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (curStock <= 0.0) Color(0xFFFFF3F0) else Color(0xFFFFF8E1),
+                        border = BorderStroke(1.dp, if (curStock <= 0.0) LoyError.copy(alpha = 0.4f) else LoyWarning.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.WarningAmber,
+                                contentDescription = null,
+                                tint = if (curStock <= 0.0) LoyError else LoyWarning,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                text = if (curStock <= 0.0) {
+                                    "Out of stock! Threshold is < ${formatQty(data.settings.lowStockThreshold)}. Background check will notify."
+                                } else {
+                                    "Below alert threshold (< ${formatQty(data.settings.lowStockThreshold)}). Background check will trigger an alert."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (curStock <= 0.0) LoyError else Color(0xFFB78103),
+                            )
+                        }
                     }
                 }
             }

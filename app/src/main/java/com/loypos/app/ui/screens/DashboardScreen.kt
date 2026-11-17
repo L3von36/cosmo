@@ -26,10 +26,12 @@ import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Assessment
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.PeopleOutline
 import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.material.icons.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
@@ -232,6 +234,19 @@ fun DashboardScreen(
                         imageVector = Icons.Outlined.AdminPanelSettings,
                         contentDescription = "Open Back Office",
                         tint = LoyGreen,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                IconButton(
+                    onClick = { viewModel.showWalkthrough() },
+                    modifier = Modifier
+                        .accessibleTouchTarget(metrics.minTouchTarget)
+                        .testTag("dashboard_walkthrough_button"),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.HelpOutline,
+                        contentDescription = "Getting Started Walkthrough",
+                        tint = LoyTextSecondary,
                         modifier = Modifier.size(19.dp),
                     )
                 }
@@ -452,6 +467,19 @@ fun DashboardScreen(
                                             Text("Adjust Stock", maxLines = 1)
                                         }
                                     }
+                                    if (outOfStockCount + lowStockCount > 0) {
+                                        OutlinedButton(
+                                            onClick = { viewModel.runLowStockCheckNow() },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = metrics.minTouchTarget)
+                                                .testTag("dashboard_check_stock_now_expanded"),
+                                        ) {
+                                            Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Run Background Stock Check")
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -515,6 +543,19 @@ fun DashboardScreen(
                                         .testTag("dashboard_adjust_stock_button"),
                                 ) {
                                     Text("Adjust Stock", maxLines = 1)
+                                }
+                            }
+                            if (outOfStockCount + lowStockCount > 0) {
+                                OutlinedButton(
+                                    onClick = { viewModel.runLowStockCheckNow() },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = metrics.minTouchTarget)
+                                        .testTag("dashboard_check_stock_now_compact"),
+                                ) {
+                                    Icon(Icons.Outlined.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Run Background Stock Check")
                                 }
                             }
                         }

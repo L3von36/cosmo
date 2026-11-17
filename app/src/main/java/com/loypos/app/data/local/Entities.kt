@@ -359,6 +359,7 @@ data class SettingsModel(
     val lowStockLastCheckAt: Long = 0L,
     val lowStockLastCount: Int = 0,
     val dailyRevenueTargetCents: Long = 0L,
+    val hasSeenWalkthrough: Boolean = false,
 )
 
 data class ShiftStats(

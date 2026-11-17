@@ -107,6 +107,8 @@ data class UiSessionState(
     val integrityResult: String? = null,
     val lowStockWorkerStatus: String = "Off",
     val navigateToLowStockTrigger: Int = 0,
+    val initialFilterLowStock: Boolean = false,
+    val showWalkthrough: Boolean = false,
     val message: String? = null,
 )
 
@@ -268,6 +270,7 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 val intervalMin = (raw["low_stock_interval_minutes"]?.toLongOrNull() ?: 15L).coerceAtLeast(15L)
                 LowStockWorkScheduler.schedulePeriodicCheck(appContext, intervalMin)
             }
+            com.loypos.app.core.GithubUpdateWorker.schedule(appContext)
         }
         viewModelScope.launch {
             WorkManager.getInstance(appContext)
@@ -287,12 +290,32 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun triggerLowStockNavigation() {
-        _session.update { it.copy(navigateToLowStockTrigger = it.navigateToLowStockTrigger + 1) }
+    fun triggerLowStockNavigation(filterLowStockInInventory: Boolean = true) {
+        _session.update {
+            it.copy(
+                navigateToLowStockTrigger = it.navigateToLowStockTrigger + 1,
+                initialFilterLowStock = filterLowStockInInventory,
+            )
+        }
     }
 
     fun consumeLowStockNavigation() {
-        _session.update { it.copy(navigateToLowStockTrigger = 0) }
+        _session.update { it.copy(navigateToLowStockTrigger = 0, initialFilterLowStock = false) }
+    }
+
+    fun showWalkthrough() {
+        _session.update { it.copy(showWalkthrough = true) }
+    }
+
+    fun hideWalkthrough() {
+        _session.update { it.copy(showWalkthrough = false) }
+    }
+
+    fun setWalkthroughCompleted(completed: Boolean) {
+        viewModelScope.launch {
+            repo.setWalkthroughCompleted(completed)
+            _session.update { it.copy(showWalkthrough = false) }
+        }
     }
 
     fun consumeMessage() {
@@ -1328,5 +1351,10 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+    }
+
+    fun checkForAppUpdatesNow() {
+        com.loypos.app.core.GithubUpdateWorker.checkNow(appContext)
+        showMessage("Checking GitHub releases for updates...")
     }
 }

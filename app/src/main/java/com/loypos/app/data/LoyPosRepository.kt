@@ -93,6 +93,7 @@ class LoyPosRepository(private val context: Context) {
             lowStockLastCheckAt = map["low_stock_last_check_at"]?.toLongOrNull() ?: 0L,
             lowStockLastCount = map["low_stock_last_count"]?.toIntOrNull() ?: 0,
             dailyRevenueTargetCents = (map["daily_revenue_target_cents"]?.toLongOrNull() ?: 0L).coerceAtLeast(0L),
+            hasSeenWalkthrough = map["has_seen_walkthrough"] == "true",
         )
     }
 
@@ -226,6 +227,10 @@ class LoyPosRepository(private val context: Context) {
 
     suspend fun saveDailyRevenueTarget(targetCents: Long) {
         saveSetting("daily_revenue_target_cents", targetCents.coerceAtLeast(0L).toString())
+    }
+
+    suspend fun setWalkthroughCompleted(completed: Boolean) {
+        saveSetting("has_seen_walkthrough", completed.toString())
     }
 
     suspend fun getLowStockProducts(threshold: Double): List<ItemEntity> =
