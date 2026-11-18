@@ -12,10 +12,11 @@ import java.net.URL
 
 /**
  * Plesk MySQL/MariaDB HTTPS REST sync client targeting novelsapps.com.et.
- * Credentials (Tier 2): a per-device token issued by POST /pair (one-time
- * pairing code from devices.php), stored via SecurityManager (Android Keystore /
- * EncryptedSharedPreferences) and falling back to BuildConfig.PLESK_SYNC_TOKEN.
- * The server also accepts the legacy shared token until device auth is required.
+ * Credentials (Tier 2): the terminal signs in ONCE with an owner/manager
+ * account (POST /devices/register) and receives its own long-lived device
+ * token, stored via SecurityManager (Android Keystore / EncryptedSharedPreferences)
+ * and falling back to BuildConfig.PLESK_SYNC_TOKEN. The server also accepts the
+ * legacy shared token until device auth is required.
  * Local Room SQLite remains the offline-first runtime store so POS checkout never blocks.
  */
 object CloudSyncClient {
@@ -31,61 +32,69 @@ object CloudSyncClient {
             .orEmpty()
     }
 
-    sealed class PairOutcome {
-        data class Success(val deviceId: Long, val deviceName: String) : PairOutcome()
-        data class Failure(val message: String) : PairOutcome()
+    sealed class RegisterOutcome {
+        data class Success(val deviceId: Long, val deviceName: String, val pairedAs: String) : RegisterOutcome()
+        data class Failure(val message: String) : RegisterOutcome()
     }
 
     /**
-     * Tier 2 pairing: exchange the one-time pairing code shown in devices.php
-     * for this terminal's own device token. On success the token is stored in
-     * the same secure slot used for sync (SecurityManager.saveSecureToken) —
-     * from then on resolveSyncToken() returns the device token and every sync
-     * call authenticates as this specific, individually revocable device.
+     * Tier 2 self-registration: sign in with an owner/manager account and this
+     * terminal registers itself. On success the device token is stored in the
+     * same secure slot used for sync (SecurityManager.saveSecureToken) — from
+     * then on resolveSyncToken() returns the device token and every sync call
+     * authenticates as this specific, individually revocable device.
+     * No pairing codes, nothing to copy from the back office.
      */
-    suspend fun pairDevice(
+    suspend fun registerDevice(
         context: Context,
         serverUrl: String,
-        pairingCode: String,
+        email: String,
+        password: String,
         deviceName: String,
-    ): PairOutcome = withContext(Dispatchers.IO) {
+    ): RegisterOutcome = withContext(Dispatchers.IO) {
         val base = serverUrl.trim().trimEnd('/')
-        val code = pairingCode.trim().uppercase()
+        val mail = email.trim().lowercase()
         if (!base.startsWith("http")) {
-            return@withContext PairOutcome.Failure("Server URL must start with https://")
+            return@withContext RegisterOutcome.Failure("Server URL must start with https://")
         }
-        if (code.length != 8) {
-            return@withContext PairOutcome.Failure("Pairing code is 8 characters — generate one in devices.php")
+        if (!mail.contains('@') || mail.length < 5) {
+            return@withContext RegisterOutcome.Failure("Enter the email of your owner or manager account")
+        }
+        if (password.isEmpty()) {
+            return@withContext RegisterOutcome.Failure("Enter the account password")
         }
         try {
             val body = JSONObject().apply {
-                put("code", code)
+                put("email", mail)
+                put("password", password)
                 put("name", deviceName.trim().ifEmpty { android.os.Build.MODEL })
             }
-            val res = httpPostJson("$base/pair", "", body)
+            val res = httpPostJson("$base/devices/register", "", body)
             val err = res.json?.optString("error")?.takeIf { it.isNotEmpty() }
             when {
                 res.code in 200..299 && res.json != null -> {
                     val deviceToken = res.json.optString("device_token").orEmpty()
                     if (deviceToken.isEmpty()) {
-                        PairOutcome.Failure("Server accepted the code but returned no token (HTTP ${res.code})")
+                        RegisterOutcome.Failure("Server accepted the sign-in but returned no token (HTTP ${res.code})")
                     } else {
                         SecurityManager.saveSecureToken(context, deviceToken)
                         SecurityManager.saveCredential(context, "device_id", res.json.optLong("device_id", -1L).toString())
                         SecurityManager.saveCredential(context, "device_name", res.json.optString("device_name"))
-                        PairOutcome.Success(
+                        SecurityManager.saveCredential(context, "paired_as", res.json.optString("paired_as"))
+                        RegisterOutcome.Success(
                             res.json.optLong("device_id", -1L),
                             res.json.optString("device_name").ifEmpty { "Terminal" },
+                            res.json.optString("paired_as"),
                         )
                     }
                 }
-                res.code == 410 -> PairOutcome.Failure(err ?: "Pairing code already used or expired — generate a new one")
-                res.code == 404 -> PairOutcome.Failure(err ?: "Pairing code not found — check for typos")
-                res.code == 429 -> PairOutcome.Failure(err ?: "Too many attempts — wait a minute and retry")
-                else -> PairOutcome.Failure(err ?: "Pairing failed (HTTP ${res.code})")
+                res.code == 401 -> RegisterOutcome.Failure(err ?: "Invalid email or password")
+                res.code == 403 -> RegisterOutcome.Failure(err ?: "This account can't add terminals")
+                res.code == 429 -> RegisterOutcome.Failure(err ?: "Too many attempts — wait a minute and retry")
+                else -> RegisterOutcome.Failure(err ?: "Sign-in failed (HTTP ${res.code})")
             }
         } catch (e: Exception) {
-            PairOutcome.Failure("Cannot reach $base (${e.javaClass.simpleName})")
+            RegisterOutcome.Failure("Cannot reach $base (${e.javaClass.simpleName})")
         }
     }
 

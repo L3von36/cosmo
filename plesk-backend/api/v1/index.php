@@ -93,20 +93,22 @@ function authenticate_request(PDO $pdo, string $providedToken, array $config): a
         }
     }
     json_response(401, ['ok' => false, 'error' => $requireDevice
-        ? 'Unauthorized: pair this device first (app Settings → Pair This Device) or use a valid device token'
+        ? 'Unauthorized: sign in on this terminal first (app Settings → Sign In & Pair This Device) or use a valid device token'
         : 'Unauthorized: invalid sync or device token']);
 }
 
-// POST /pair — bootstrap endpoint: exchanges a one-time pairing code for a
+// POST /devices/register — self-registration. The terminal signs in with an
+// owner/manager account (email + password) and receives its own long-lived
 // device token. No bearer auth here (a brand-new terminal has no token yet);
-// protected instead by single-use codes + per-IP throttling.
-if ($method === 'POST' && ($route === '/pair' || $route === '/devices/pair')) {
-    $ipKey = 'loypos_pair_' . hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+// protected instead by bcrypt password verification + per-IP throttling.
+// Passwords are never stored — only the password_hash from the users table.
+if ($method === 'POST' && ($route === '/devices/register' || $route === '/devices/pair')) {
+    $ipKey = 'loypos_reg_' . hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
     $tmpFile = sys_get_temp_dir() . '/' . $ipKey;
     $hits = is_file($tmpFile) ? (json_decode((string)file_get_contents($tmpFile), true) ?: []) : [];
     $hits = array_values(array_filter($hits, static fn($t) => $t > $serverTimeMs - 60000));
     if (count($hits) >= 10) {
-        json_response(429, ['ok' => false, 'error' => 'Too many pairing attempts from this address — try again in a minute']);
+        json_response(429, ['ok' => false, 'error' => 'Too many sign-in attempts from this address — try again in a minute']);
     }
     $hits[] = $serverTimeMs;
     @file_put_contents($tmpFile, json_encode($hits), LOCK_EX);
@@ -115,42 +117,57 @@ if ($method === 'POST' && ($route === '/pair' || $route === '/devices/pair')) {
     if (!is_array($data)) {
         json_response(400, ['ok' => false, 'error' => 'Invalid JSON body']);
     }
-    $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($data['code'] ?? '')));
-    if (!preg_match('/^[A-HJ-NP-Z2-9]{8}$/', $code)) {
-        json_response(400, ['ok' => false, 'error' => 'Pairing code must be 8 characters (letters/digits — codes never contain 0 O 1 I)']);
+    $email = strtolower(trim((string)($data['email'] ?? '')));
+    $password = (string)($data['password'] ?? '');
+    $deviceName = mb_substr(trim((string)($data['name'] ?? '')), 0, 100);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        json_response(400, ['ok' => false, 'error' => 'Enter the email of your owner or manager account']);
+    }
+    if ($password === '') {
+        json_response(400, ['ok' => false, 'error' => 'Account password required']);
+    }
+    if ($deviceName === '') {
+        $deviceName = 'Terminal';
     }
     try {
-        $stmt = $pdo->prepare('SELECT id, name_hint, expires_ms, used_ms FROM pairing_codes WHERE code_hash = :h LIMIT 1');
-        $stmt->execute([':h' => hash('sha256', $code)]);
-        $pc = $stmt->fetch();
+        $stmt = $pdo->prepare('SELECT id, email, password_hash, role, status FROM users WHERE email = :e LIMIT 1');
+        $stmt->execute([':e' => $email]);
+        $user = $stmt->fetch();
     } catch (Throwable $e) {
-        json_response(503, ['ok' => false, 'error' => 'Pairing tables missing — re-run install.php (migration step 002_device_auth)']);
+        json_response(503, ['ok' => false, 'error' => 'Account tables missing — re-run install.php (migration step 003_account_auth)']);
     }
-    if (!$pc || $pc['used_ms'] !== null || (int)$pc['expires_ms'] < $serverTimeMs) {
-        usleep(400000); // slow down guessing without leaking which case failed
-        json_response($pc ? 410 : 404, ['ok' => false, 'error' => !$pc
-            ? 'Pairing code not found — check for typos'
-            : ($pc['used_ms'] !== null ? 'Pairing code already used' : 'Pairing code expired — generate a new one in devices.php')]);
+    if (!$user || !password_verify($password, (string)$user['password_hash'])) {
+        usleep(400000); // slow down guessing without leaking which field failed
+        json_response(401, ['ok' => false, 'error' => 'Invalid email or password']);
     }
-    $deviceToken = bin2hex(random_bytes(32)); // shown once, stored hashed
-    $deviceName = mb_substr(trim((string)($data['name'] ?? '')) ?: (string)($pc['name_hint'] ?? ''), 0, 100) ?: 'Terminal';
+    if ($user['status'] !== 'active') {
+        json_response(403, ['ok' => false, 'error' => 'This account is disabled — ask the shop owner']);
+    }
+    if (!in_array($user['role'], ['owner', 'manager'], true)) {
+        json_response(403, ['ok' => false, 'error' => 'Only owner or manager accounts can add a terminal']);
+    }
+    $deviceToken = bin2hex(random_bytes(32)); // returned once, stored hashed
     try {
         $pdo->beginTransaction();
-        $claim = $pdo->prepare('UPDATE pairing_codes SET used_ms = :u WHERE id = :id AND used_ms IS NULL');
-        $claim->execute([':u' => $serverTimeMs, ':id' => (int)$pc['id']]);
-        if ($claim->rowCount() !== 1) {
-            throw new RuntimeException('code-taken');
-        }
-        $ins = $pdo->prepare("INSERT INTO devices (name, branch_id, token_hash, status, last_seen_ms, created_ms) VALUES (:n, NULL, :h, 'active', :seen, :made)");
-        $ins->execute([':n' => $deviceName, ':h' => hash('sha256', $deviceToken), ':seen' => $serverTimeMs, ':made' => $serverTimeMs]);
+        $ins = $pdo->prepare(
+            "INSERT INTO devices (name, branch_id, token_hash, paired_by_user_id, status, last_seen_ms, created_ms)
+             VALUES (:n, NULL, :h, :uid, 'active', :seen, :made)"
+        );
+        $ins->execute([
+            ':n' => $deviceName,
+            ':h' => hash('sha256', $deviceToken),
+            ':uid' => (int)$user['id'],
+            ':seen' => $serverTimeMs,
+            ':made' => $serverTimeMs,
+        ]);
         $deviceId = (int)$pdo->lastInsertId();
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_log('LoyPOS pair failed: ' . $e->getMessage());
-        json_response(409, ['ok' => false, 'error' => 'Pairing code already used']);
+        error_log('LoyPOS device register failed: ' . $e->getMessage());
+        json_response(500, ['ok' => false, 'error' => 'Could not register this device — try again']);
     }
     json_response(201, [
         'ok' => true,
@@ -158,6 +175,7 @@ if ($method === 'POST' && ($route === '/pair' || $route === '/devices/pair')) {
         'device_name' => $deviceName,
         'device_token' => $deviceToken,
         'token_type' => 'device',
+        'paired_as' => (string)$user['email'],
         'server_time_ms' => $serverTimeMs,
     ]);
 }
@@ -188,9 +206,22 @@ if ($method === 'GET' && ($route === '/health' || $route === '/')) {
 
 if ($method === 'GET' && $route === '/devices/me') {
     if ($auth['mode'] !== 'device') {
-        json_response(200, ['ok' => true, 'mode' => 'legacy', 'message' => 'Running on the legacy shared token — pair this device for independent credentials']);
+        json_response(200, ['ok' => true, 'mode' => 'legacy', 'message' => 'Running on the legacy shared token — sign in with an owner account (Settings → Sign In & Pair This Device) to give this terminal its own credentials']);
     }
-    json_response(200, ['ok' => true, 'mode' => 'device', 'device' => $auth['device']]);
+    $pairedAs = null;
+    try {
+        $q = $pdo->prepare('SELECT paired_by_user_id FROM devices WHERE id = :id LIMIT 1');
+        $q->execute([':id' => (int)$auth['device']['id']]);
+        $pairedBy = (int)($q->fetchColumn() ?: 0);
+        if ($pairedBy > 0) {
+            $q2 = $pdo->prepare('SELECT email FROM users WHERE id = :id LIMIT 1');
+            $q2->execute([':id' => $pairedBy]);
+            $pairedAs = $q2->fetchColumn() ?: null;
+        }
+    } catch (Throwable $e) {
+        $pairedAs = null; // users table / new column not migrated yet
+    }
+    json_response(200, ['ok' => true, 'mode' => 'device', 'device' => $auth['device'], 'paired_as' => $pairedAs]);
 }
 
 if ($method === 'POST' && $route === '/sync/push') {

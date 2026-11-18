@@ -134,4 +134,30 @@ CREATE TABLE IF NOT EXISTS shop_settings (
     updated_at BIGINT NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Tier 2 device auth — normally created by install.php (steps 002/003),
+-- included here so manual imports get the full schema too.
+CREATE TABLE IF NOT EXISTS devices (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    branch_id VARCHAR(64) NULL,
+    token_hash CHAR(64) NOT NULL,
+    paired_by_user_id INT UNSIGNED NULL,
+    status ENUM('active','revoked') NOT NULL DEFAULT 'active',
+    last_seen_ms BIGINT UNSIGNED NULL,
+    created_ms BIGINT UNSIGNED NOT NULL,
+    UNIQUE KEY uq_devices_token_hash (token_hash),
+    INDEX idx_devices_paired_by (paired_by_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS users (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(190) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NULL,
+    role ENUM('owner','manager','cashier') NOT NULL DEFAULT 'cashier',
+    status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+    created_ms BIGINT UNSIGNED NOT NULL,
+    UNIQUE KEY uq_users_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

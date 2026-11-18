@@ -85,10 +85,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 import com.loypos.app.core.LocalBackup
+import com.loypos.app.core.SecurityManager
 import com.loypos.app.core.formatBytes
 import com.loypos.app.core.formatDateTime
 import com.loypos.app.core.formatQty
@@ -668,8 +670,8 @@ fun SettingsScreen(
                     HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
                         icon = Icons.Outlined.DevicesOther,
-                        title = "Pair This Device (recommended)",
-                        subtitle = "One-time code from devices.php → this terminal gets its own revocable token",
+                        title = "Sign In & Pair This Device (recommended)",
+                        subtitle = "Sign in with your owner/manager account — this terminal registers itself with its own revocable token",
                         iconTint = LoyGreen,
                         onClick = { showPairDialog = true },
                         modifier = Modifier.testTag("settings_pair_device_row"),
@@ -897,20 +899,21 @@ private fun PairDeviceDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var serverUrl by remember { mutableStateOf(initialServerUrl) }
-    var code by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(SecurityManager.getCredential(context, "paired_as")) }
+    var password by remember { mutableStateOf("") }
     var deviceName by remember { mutableStateOf(android.os.Build.MODEL) }
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Pair This Device") },
+        title = { Text("Sign In & Pair This Device") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (result == null) {
                     Text(
-                        text = "Step 1 — open devices.php on your Plesk backend and generate a one-time pairing code (valid 15 minutes). " +
-                            "Step 2 — enter it here. This terminal receives its own secure token (Android Keystore) and can be revoked " +
-                            "independently in devices.php if the tablet is ever lost.",
+                        text = "Sign in with your owner or manager account — no codes to copy. " +
+                            "This terminal registers itself and receives its own secure token (Android Keystore) " +
+                            "that can be revoked independently in devices.php if the tablet is ever lost.",
                         style = MaterialTheme.typography.bodySmall,
                         color = LoyTextSecondary,
                     )
@@ -922,11 +925,20 @@ private fun PairDeviceDialog(
                         modifier = Modifier.fillMaxWidth().testTag("settings_pair_url_input"),
                     )
                     OutlinedTextField(
-                        value = code,
-                        onValueChange = { code = it },
-                        label = { Text("Pairing code (8 characters)") },
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Account email (owner or manager)") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_code_input"),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_email_input"),
+                    )
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Account password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_password_input"),
                     )
                     OutlinedTextField(
                         value = deviceName,
@@ -949,20 +961,23 @@ private fun PairDeviceDialog(
                     onClick = {
                         busy = true
                         scope.launch {
-                            val outcome = com.loypos.app.core.CloudSyncClient.pairDevice(context, serverUrl, code, deviceName)
+                            val outcome = com.loypos.app.core.CloudSyncClient.registerDevice(
+                                context, serverUrl, email, password, deviceName,
+                            )
                             busy = false
                             result = when (outcome) {
-                                is com.loypos.app.core.CloudSyncClient.PairOutcome.Success ->
-                                    "Paired as \"${outcome.deviceName}\". Cloud sync now uses this device's own token. " +
-                                        "Run Sync with Plesk MySQL to verify, and revoke it anytime from devices.php."
-                                is com.loypos.app.core.CloudSyncClient.PairOutcome.Failure -> outcome.message
+                                is com.loypos.app.core.CloudSyncClient.RegisterOutcome.Success ->
+                                    "Signed in as \"${outcome.pairedAs}\" — paired as \"${outcome.deviceName}\". " +
+                                        "Cloud sync now uses this device's own token. Run Sync with Plesk MySQL to verify, " +
+                                        "and revoke it anytime from devices.php."
+                                is com.loypos.app.core.CloudSyncClient.RegisterOutcome.Failure -> outcome.message
                             }
                         }
                     },
-                    enabled = !busy && code.isNotBlank(),
+                    enabled = !busy && email.isNotBlank() && password.isNotBlank(),
                     modifier = Modifier.heightIn(min = 48.dp).testTag("settings_pair_save"),
                 ) {
-                    Text(if (busy) "Pairing…" else "Pair")
+                    Text(if (busy) "Signing in…" else "Sign In & Pair")
                 }
             } else {
                 Button(

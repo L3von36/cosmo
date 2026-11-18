@@ -10,4 +10,7 @@ return [
     'db_pass' => 'YOUR_PLESK_DB_PASSWORD',
     // Set the same secret token as PLESK_SYNC_TOKEN in AI Studio Secrets panel
     'sync_token' => 'YOUR_PLESK_SYNC_TOKEN',
+    // Admin gate for install.php / devices.php bootstrap & recovery.
+    // The installer keeps or auto-generates this; change it any time here.
+    'setup_token' => 'CHANGE_ME_SETUP_TOKEN',
 ];

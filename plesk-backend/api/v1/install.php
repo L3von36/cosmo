@@ -19,20 +19,12 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
 // ── Gate ────────────────────────────────────────────────────────────────────
-const SETUP_TOKEN = 'mequbbzjki';
+// Setup token: unlocks install.php and the devices.php bootstrap / recovery
+// page. The built-in fallback only applies while no config.php exists — the
+// REAL token lives in config.php (key: setup_token), which is never committed.
+// Rotate it any time by editing config.php via Plesk File Manager.
+const SETUP_TOKEN_FALLBACK = '67566d1660ab1f7692d250a9';
 const LOCK_FILE   = __DIR__ . '/install.lock';
-
-if (!isset($_GET['token']) || !hash_equals(SETUP_TOKEN, (string)$_GET['token'])) {
-    http_response_code(403);
-    exit('Forbidden: open this installer as install.php?token=' . SETUP_TOKEN);
-}
-
-header('Content-Type: text/html; charset=utf-8');
-
-function e(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
-
-$locked = is_file(LOCK_FILE);
-$reportOnly = isset($_POST['mode']) && $_POST['mode'] === 'report';
 
 // Pre-fill from an existing config.php (shipped in the bundle or from a previous run)
 $cfgExisting = null;
@@ -44,13 +36,28 @@ if (is_file(__DIR__ . '/config.php')) {
         $cfgExisting = null;
     }
 }
+$setupToken = trim((string)($cfgExisting['setup_token'] ?? '')) ?: SETUP_TOKEN_FALLBACK;
+
+if (!isset($_GET['token']) || !hash_equals($setupToken, (string)$_GET['token'])) {
+    http_response_code(403);
+    exit('Forbidden: open this installer as install.php?token=<your setup token>');
+}
+
+header('Content-Type: text/html; charset=utf-8');
+
+function e(?string $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+
+$locked = is_file(LOCK_FILE);
+$reportOnly = isset($_POST['mode']) && $_POST['mode'] === 'report';
+
+// ($cfgExisting was already loaded above, before the token gate)
 $results = [];   // [section, label, status, detail]
 $countsBefore = [];
 $countsAfter = [];
 $tables = [
     'branches', 'categories', 'products', 'customers', 'sales', 'sale_items',
     'stock_movements', 'shifts', 'cash_movements', 'shop_settings', 'schema_migrations',
-    'devices', 'pairing_codes',
+    'devices', 'users',
 ];
 
 // ── Migration steps (add new steps below; never edit an applied step) ───────
@@ -204,6 +211,41 @@ $MIGRATIONS = [
             INDEX idx_pairing_expires (expires_ms)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
     ],
+    // Tier 2 (automated pairing): the terminal signs in with an owner/manager
+    // account (email + password, bcrypt-verified) and registers itself — no
+    // manual pairing codes. Replaces the one-time-code flow of step 002:
+    // users are added, devices learn which account paired them, and the
+    // now-unused pairing_codes table is dropped (it only ever held
+    // short-lived hashes, never shop data).
+    '003_account_auth' => [
+        "CREATE TABLE IF NOT EXISTS users (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(190) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            name VARCHAR(100) NULL,
+            role ENUM('owner','manager','cashier') NOT NULL DEFAULT 'cashier',
+            status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+            created_ms BIGINT UNSIGNED NOT NULL,
+            UNIQUE KEY uq_users_email (email)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        // MySQL 8 / Percona have no ADD COLUMN IF NOT EXISTS — add the column
+        // only when it is actually missing (safe to re-run).
+        static function (PDO $pdo): void {
+            $has = $pdo->query(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'devices'
+                   AND COLUMN_NAME = 'paired_by_user_id'"
+            )->fetchColumn();
+            if ((int)$has === 0) {
+                $pdo->exec(
+                    "ALTER TABLE devices
+                     ADD COLUMN paired_by_user_id INT UNSIGNED NULL AFTER token_hash,
+                     ADD INDEX idx_devices_paired_by (paired_by_user_id)"
+                );
+            }
+        },
+        "DROP TABLE IF EXISTS pairing_codes",
+    ],
 ];
 
 function count_rows(PDO $pdo, array $tables): array {
@@ -220,6 +262,7 @@ function count_rows(PDO $pdo, array $tables): array {
 
 $done = false;
 $generatedToken = '';
+$generatedSetupToken = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Form input wins; empty fields fall back to saved config.php, then defaults
@@ -303,6 +346,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $tokenKept = true;
             }
+            // setup_token: keep the one saved in config.php; generate a fresh
+            // one only when there is none (first install without a shipped config)
+            $newSetupToken = trim((string)($cfgExisting['setup_token'] ?? ''));
+            if ($newSetupToken === '') {
+                $newSetupToken = bin2hex(random_bytes(12));
+                $generatedSetupToken = $newSetupToken;
+            }
+            $setupToken = $newSetupToken; // so results/links below use the new value
             $cfg = [
                 'db_host' => $dbHost,
                 'db_port' => $dbPort,
@@ -310,6 +361,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'db_user' => $dbUser,
                 'db_pass' => $dbPass,
                 'sync_token' => $syncTok,
+                'setup_token' => $newSetupToken,
             ];
             $php = "<?php\n// Generated by install.php on " . gmdate('c') . "\n// NEVER commit this file to version control.\n\nreturn " . var_export($cfg, true) . ";\n";
             if (!is_file($cfgPath) || $overwriteCfg) {
@@ -333,12 +385,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $results[] = ["Step {$id}", 'already applied — skipped', 'ok', ''];
                     continue;
                 }
-                foreach ($statements as $sql) {
-                    $pdo->exec($sql);
+                if ($statements instanceof Closure) {
+                    $statements($pdo);
+                    $results[] = ["Step {$id}", 'executed', 'ok', ''];
+                } else {
+                    foreach ($statements as $sql) {
+                        if ($sql instanceof Closure) {
+                            $sql($pdo);
+                        } else {
+                            $pdo->exec($sql);
+                        }
+                    }
+                    $results[] = ["Step {$id}", count($statements) . ' statements executed', 'ok', 'CREATE TABLE IF NOT EXISTS — existing tables untouched'];
                 }
                 $pdo->prepare('INSERT INTO schema_migrations (step_id, applied_at) VALUES (?, ?)')
                     ->execute([$id, (int)round(microtime(true) * 1000)]);
-                $results[] = ["Step {$id}", count($statements) . ' statements executed', 'ok', 'CREATE TABLE IF NOT EXISTS — existing tables untouched'];
             }
 
             // 5. Snapshot after + lock
@@ -417,11 +478,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="token">sync_token: kept unchanged from the <code>config.php</code> shipped in the bundle (no need to update <code>PLESK_SYNC_TOKEN</code> unless you typed a new one).</div>
  <?php endif; ?>
 
+ <?php if ($generatedSetupToken !== ''): ?>
+  <div class="token">New setup_token for devices.php (copy it now, it is stored in config.php):<br><strong><?= e($generatedSetupToken) ?></strong></div>
+ <?php endif; ?>
+
  <p class="note">Next steps: check <code>https://novelsapps.com.et/api/v1/health</code> with header
  <code>Authorization: Bearer &lt;sync_token&gt;</code>, then <strong>delete <code>install.php</code></strong> via Plesk File Manager.
  The generated <code>config.php</code> stays in <code>httpdocs/api/v1/</code>.
- For per-device security (Tier 2): open <code>devices.php?token=<?= e(SETUP_TOKEN) ?></code> — generate a one-time
- pairing code per POS terminal and pair it in the app (Settings → Pair This Device). The shared sync_token keeps
+ For per-device security (Tier 2): open <code>devices.php?token=<?= e($setupToken) ?></code>, create your
+ <strong>owner account</strong> (email + password), then on each POS terminal open the app
+ (Settings → Sign In &amp; Pair This Device) and sign in with it — the terminal registers itself and
+ gets its own revocable token automatically. No pairing codes to copy. The shared sync_token keeps
  working as a fallback until you switch on &quot;require device auth&quot; in devices.php.</p>
 
 <?php else: ?>
