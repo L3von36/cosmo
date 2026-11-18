@@ -246,6 +246,24 @@ $MIGRATIONS = [
         },
         "DROP TABLE IF EXISTS pairing_codes",
     ],
+    // Payroll audit log: salary payments recorded in the app's Back Office
+    // (Admin → Salary Payments) sync here so the admin dashboard can show
+    // per-staff totals and the payment history. Immutable log — inserts only.
+    '004_salary_payments' => [
+        "CREATE TABLE IF NOT EXISTS salary_payments (
+            id VARCHAR(64) NOT NULL PRIMARY KEY,
+            staff_id VARCHAR(64) NOT NULL,
+            staff_name VARCHAR(120) NOT NULL DEFAULT '',
+            staff_email VARCHAR(190) NOT NULL DEFAULT '',
+            amount_cents BIGINT NOT NULL DEFAULT 0,
+            currency_symbol VARCHAR(16) NOT NULL DEFAULT '',
+            note VARCHAR(500) NOT NULL DEFAULT '',
+            paid_by_name VARCHAR(120) NOT NULL DEFAULT '',
+            paid_at BIGINT UNSIGNED NOT NULL,
+            INDEX idx_salary_staff (staff_id),
+            INDEX idx_salary_paid_at (paid_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+    ],
 ];
 
 function count_rows(PDO $pdo, array $tables): array {

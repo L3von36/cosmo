@@ -225,6 +225,25 @@ interface LoyPosDao {
     @Query("DELETE FROM users WHERE id = :id")
     suspend fun deleteUserById(id: String)
 
+    // Salary payments (audit log — insert / delete only, never updated)
+    @Query("SELECT * FROM salary_payments ORDER BY paid_at DESC, id DESC")
+    fun observeSalaryPayments(): Flow<List<SalaryPaymentEntity>>
+
+    @Query("SELECT * FROM salary_payments ORDER BY paid_at DESC, id DESC")
+    suspend fun getAllSalaryPayments(): List<SalaryPaymentEntity>
+
+    @Query("SELECT COALESCE(SUM(amount_cents), 0) FROM salary_payments WHERE staff_id = :staffId")
+    suspend fun salaryPaidTotalFor(staffId: String): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSalaryPayment(payment: SalaryPaymentEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSalaryPayments(payments: List<SalaryPaymentEntity>)
+
+    @Query("DELETE FROM salary_payments WHERE id = :id")
+    suspend fun deleteSalaryPaymentById(id: String)
+
     // Branches
     @Query("SELECT * FROM branches WHERE archived = 0 ORDER BY created_at ASC")
     fun observeActiveBranches(): Flow<List<BranchEntity>>

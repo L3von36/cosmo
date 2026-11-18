@@ -492,6 +492,33 @@ if ($method === 'POST' && $route === '/sync/push') {
             }
         }
 
+        // Salary payments (migration 004). If the table isn't migrated yet,
+        // skip it instead of failing the whole push — salary data stays local.
+        if (!empty($data['salary_payments']) && is_array($data['salary_payments'])) {
+            try {
+                $stmt = $pdo->prepare(
+                    'INSERT IGNORE INTO salary_payments (id, staff_id, staff_name, staff_email, amount_cents, currency_symbol, note, paid_by_name, paid_at)
+                     VALUES (:id, :staff_id, :staff_name, :staff_email, :amount_cents, :currency_symbol, :note, :paid_by_name, :paid_at)'
+                );
+                foreach ($data['salary_payments'] as $r) {
+                    $stmt->execute([
+                        ':id' => (string)$r['id'],
+                        ':staff_id' => (string)$r['staff_id'],
+                        ':staff_name' => (string)($r['staff_name'] ?? ''),
+                        ':staff_email' => (string)($r['staff_email'] ?? ''),
+                        ':amount_cents' => (int)($r['amount_cents'] ?? 0),
+                        ':currency_symbol' => (string)($r['currency_symbol'] ?? ''),
+                        ':note' => (string)($r['note'] ?? ''),
+                        ':paid_by_name' => (string)($r['paid_by_name'] ?? ''),
+                        ':paid_at' => (int)($r['paid_at'] ?? 0),
+                    ]);
+                    $upserted++;
+                }
+            } catch (Throwable $e) {
+                // salary_payments table not migrated yet — push continues
+            }
+        }
+
         if (!empty($data['settings']) && is_array($data['settings'])) {
             $stmt = $pdo->prepare(
                 'INSERT INTO shop_settings (setting_key, setting_value, updated_at)
@@ -559,6 +586,16 @@ if ($method === 'GET' && $route === '/sync/pull') {
     $cashStmt = $pdo->prepare('SELECT * FROM cash_movements WHERE created_at >= :s');
     $cashStmt->execute([':s' => $since]);
 
+    // Migration 004 may not be applied on older installs — degrade gracefully.
+    $salaryPayments = [];
+    try {
+        $salaryStmt = $pdo->prepare('SELECT * FROM salary_payments WHERE paid_at >= :s');
+        $salaryStmt->execute([':s' => $since]);
+        $salaryPayments = $salaryStmt->fetchAll();
+    } catch (Throwable $e) {
+        $salaryPayments = [];
+    }
+
     json_response(200, [
         'ok' => true,
         'server_time_ms' => $serverTimeMs,
@@ -571,6 +608,7 @@ if ($method === 'GET' && $route === '/sync/pull') {
         'stock_movements' => $movesStmt->fetchAll(),
         'shifts' => $shiftsStmt->fetchAll(),
         'cash_movements' => $cashStmt->fetchAll(),
+        'salary_payments' => $salaryPayments,
     ]);
 }
 

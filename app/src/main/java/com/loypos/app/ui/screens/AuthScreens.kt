@@ -114,12 +114,9 @@ fun AuthGateScreen(
     lastUserEmail: String? = null,
     lastBackOfficeEmail: String? = null,
 ) {
-    var showSignUpPos by remember(hasAnyUser) { mutableStateOf(!hasAnyUser) }
-
-    // The sign-in gate is POS-only: sellers (cashiers) sign in here and get
-    // the register. The Back Office portal is owner territory and is reachable
-    // only from owner surfaces (Dashboard / Settings → Open Back Office), so
-    // an employee can never see it — let alone set up a back-office admin.
+    // Sign-in ONLY: accounts live on the LoyPOS server (created in
+    // devices.php → staff accounts) and mirror onto this device on first
+    // sign-in. No in-app account creation anywhere.
     val headerBrush = Brush.linearGradient(listOf(LoyGreen, LoyGreenAccent))
 
     Column(
@@ -157,18 +154,14 @@ fun AuthGateScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = if (showSignUpPos) "Set up your shop" else "Welcome back",
+                    text = "Welcome back",
                     style = MaterialTheme.typography.titleLarge,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = if (showSignUpPos) {
-                        "Create your owner account to start selling offline-first with 300 ready items."
-                    } else {
-                        "Sign in as owner or seller to open the POS register."
-                    },
+                    text = "Sign in with the account created for you on the LoyPOS server.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.9f),
                 )
@@ -192,18 +185,10 @@ fun AuthGateScreen(
                     color = Color.White,
                     tonalElevation = 1.dp,
                 ) {
-                    if (showSignUpPos) {
-                        SignUpForm(
-                            viewModel = viewModel,
-                            onSwitchToSignIn = { showSignUpPos = false },
-                        )
-                    } else {
-                        LoginForm(
-                            viewModel = viewModel,
-                            initialEmail = lastUserEmail,
-                            onSwitchToSignUp = { showSignUpPos = true },
-                        )
-                    }
+                    LoginForm(
+                        viewModel = viewModel,
+                        initialEmail = lastUserEmail,
+                    )
                 }
             }
         }
@@ -222,7 +207,9 @@ fun BackOfficeAuthScreen(
         BackHandler { viewModel.switchToPos() }
     }
 
-    var showSignUp by remember(hasAnyBackOfficeUser) { mutableStateOf(!hasAnyBackOfficeUser) }
+    // Sign-in ONLY — no back-office account creation here. The shop owner is
+    // mirrored automatically when they open the Back Office; extra admins are
+    // created inside the app (Back Office → Admin).
 
     Column(
         modifier = Modifier
@@ -276,18 +263,14 @@ fun BackOfficeAuthScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = if (showSignUp) "Set up Back Office Admin" else "$storeName · Back Office",
+                    text = "$storeName · Back Office",
                     style = MaterialTheme.typography.titleLarge,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = if (showSignUp) {
-                        "Create a dedicated Back Office password separate from POS register accounts."
-                    } else {
-                        "Authenticate to access Back Office dashboards, profit margins, stock controls, and admin settings."
-                    },
+                    text = "Sign in with a Back Office admin account to access dashboards, stock controls, staff, and settings.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.88f),
                 )
@@ -311,20 +294,10 @@ fun BackOfficeAuthScreen(
                     color = Color.White,
                     tonalElevation = 1.dp,
                 ) {
-                    if (showSignUp) {
-                        BackOfficeSignUpForm(
-                            viewModel = viewModel,
-                            hasExistingAccount = hasAnyBackOfficeUser,
-                            initialShopName = storeName,
-                            onSwitchToSignIn = { showSignUp = false },
-                        )
-                    } else {
-                        BackOfficeLoginForm(
-                            viewModel = viewModel,
-                            initialEmail = lastBackOfficeEmail,
-                            onSwitchToSignUp = { showSignUp = true },
-                        )
-                    }
+                    BackOfficeLoginForm(
+                        viewModel = viewModel,
+                        initialEmail = lastBackOfficeEmail,
+                    )
                 }
 
                 if (canReturnToPos) {
@@ -349,7 +322,6 @@ fun BackOfficeAuthScreen(
 private fun BackOfficeLoginForm(
     viewModel: LoyPosViewModel,
     initialEmail: String? = null,
-    onSwitchToSignUp: () -> Unit,
 ) {
     var email by remember { mutableStateOf(initialEmail ?: "") }
     var password by remember { mutableStateOf("") }
@@ -415,140 +387,20 @@ private fun BackOfficeLoginForm(
             }
         }
 
-        TextButton(
-            onClick = onSwitchToSignUp,
-            modifier = Modifier.align(Alignment.CenterHorizontally).testTag("bo_switch_to_signup"),
-        ) {
-            Text("Create a Back Office admin account", color = BackOfficeTeal)
-        }
+        Text(
+            text = "Back Office admins are created inside the app: Back Office → Admin → Add back-office admin.",
+            style = MaterialTheme.typography.bodySmall,
+            color = LoyTextSecondary,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
     }
 }
 
-@Composable
-private fun BackOfficeSignUpForm(
-    viewModel: LoyPosViewModel,
-    hasExistingAccount: Boolean,
-    initialShopName: String = "",
-    onSwitchToSignIn: () -> Unit,
-) {
-    var fullName by remember { mutableStateOf("") }
-    var shopName by remember { mutableStateOf(initialShopName) }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
-    var showPwd by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    Column(
-        modifier = Modifier.padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
-    ) {
-        OutlinedTextField(
-            value = fullName,
-            onValueChange = { fullName = it; error = null },
-            label = { Text("Admin / Manager name") },
-            leadingIcon = { Icon(Icons.Outlined.PersonOutline, contentDescription = null) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("bo_signup_name_input"),
-        )
-        if (initialShopName.isEmpty()) {
-            OutlinedTextField(
-                value = shopName,
-                onValueChange = { shopName = it; error = null },
-                label = { Text("Shop name (optional)") },
-                leadingIcon = { Icon(Icons.Outlined.Storefront, contentDescription = null) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("bo_signup_shop_input"),
-            )
-        }
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it; error = null },
-            label = { Text("Back Office Email") },
-            leadingIcon = { Icon(Icons.Outlined.MailOutline, contentDescription = null) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("bo_signup_email_input"),
-        )
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it; error = null },
-            label = { Text("Password (min 8 characters)") },
-            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-            trailingIcon = {
-                IconButton(onClick = { showPwd = !showPwd }) {
-                    Icon(
-                        if (showPwd) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        contentDescription = if (showPwd) "Hide password" else "Show password",
-                    )
-                }
-            },
-            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("bo_signup_password_input"),
-        )
-        OutlinedTextField(
-            value = confirm,
-            onValueChange = { confirm = it; error = null },
-            label = { Text("Confirm password") },
-            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("bo_signup_confirm_input"),
-        )
-
-        if (error != null) {
-            Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
-        }
-
-        Button(
-            onClick = {
-                if (fullName.trim().isEmpty()) {
-                    error = "Enter your admin name"
-                    return@Button
-                }
-                if (password != confirm) {
-                    error = "Passwords do not match"
-                    return@Button
-                }
-                busy = true
-                error = null
-                viewModel.signUpBackOffice(email, password, fullName, shopName) { err ->
-                    busy = false
-                    error = err
-                }
-            },
-            enabled = !busy,
-            colors = ButtonDefaults.buttonColors(containerColor = BackOfficeNavy, contentColor = Color.White),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp)
-                .testTag("bo_signup_button"),
-        ) {
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-            } else {
-                Text("Create Back Office Account")
-            }
-        }
-
-        if (hasExistingAccount) {
-            TextButton(
-                onClick = onSwitchToSignIn,
-                modifier = Modifier.align(Alignment.CenterHorizontally).testTag("bo_switch_to_login"),
-            ) {
-                Text("Already have a Back Office account? Sign in", color = LoyTextSecondary)
-            }
-        }
-    }
-}
 
 @Composable
 private fun LoginForm(
     viewModel: LoyPosViewModel,
     initialEmail: String? = null,
-    onSwitchToSignUp: () -> Unit,
 ) {
     var email by remember { mutableStateOf(initialEmail ?: "") }
     var password by remember { mutableStateOf("") }
@@ -613,132 +465,11 @@ private fun LoginForm(
             }
         }
 
-        TextButton(
-            onClick = onSwitchToSignUp,
-            modifier = Modifier.align(Alignment.CenterHorizontally).testTag("switch_to_signup_button"),
-        ) {
-            Text("Create a new shop account", color = LoyGreen)
-        }
-    }
-}
-
-@Composable
-private fun SignUpForm(
-    viewModel: LoyPosViewModel,
-    onSwitchToSignIn: () -> Unit,
-) {
-    var shopName by remember { mutableStateOf("") }
-    var branchName by remember { mutableStateOf("Main branch") }
-    var ownerName by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirm by remember { mutableStateOf("") }
-    var showPwd by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    Column(
-        modifier = Modifier.padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
-    ) {
-        OutlinedTextField(
-            value = shopName,
-            onValueChange = { shopName = it; error = null },
-            label = { Text("Shop name") },
-            leadingIcon = { Icon(Icons.Outlined.Storefront, contentDescription = null) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("signup_shop_input"),
+        Text(
+            text = "No account yet? The owner creates accounts on the LoyPOS server (devices.php → Staff accounts).",
+            style = MaterialTheme.typography.bodySmall,
+            color = LoyTextSecondary,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
         )
-        OutlinedTextField(
-            value = branchName,
-            onValueChange = { branchName = it },
-            label = { Text("First branch name") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("signup_branch_input"),
-        )
-        OutlinedTextField(
-            value = ownerName,
-            onValueChange = { ownerName = it },
-            label = { Text("Owner name (optional)") },
-            leadingIcon = { Icon(Icons.Outlined.PersonOutline, contentDescription = null) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("signup_owner_input"),
-        )
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it; error = null },
-            label = { Text("Email") },
-            leadingIcon = { Icon(Icons.Outlined.MailOutline, contentDescription = null) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("signup_email_input"),
-        )
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it; error = null },
-            label = { Text("Password (min 8 characters)") },
-            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-            trailingIcon = {
-                IconButton(onClick = { showPwd = !showPwd }) {
-                    Icon(
-                        if (showPwd) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        contentDescription = if (showPwd) "Hide password" else "Show password",
-                    )
-                }
-            },
-            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("signup_password_input"),
-        )
-        OutlinedTextField(
-            value = confirm,
-            onValueChange = { confirm = it; error = null },
-            label = { Text("Confirm password") },
-            leadingIcon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-            visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().testTag("signup_confirm_input"),
-        )
-
-        if (error != null) {
-            Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
-        }
-
-        Button(
-            onClick = {
-                if (shopName.trim().isEmpty()) {
-                    error = "Enter your shop name"
-                    return@Button
-                }
-                if (password != confirm) {
-                    error = "Passwords do not match"
-                    return@Button
-                }
-                busy = true
-                error = null
-                viewModel.signUp(email, password, shopName, ownerName, branchName) { err ->
-                    busy = false
-                    error = err
-                }
-            },
-            enabled = !busy,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp)
-                .testTag("signup_button"),
-        ) {
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-            } else {
-                Text("Create account")
-            }
-        }
-
-        TextButton(
-            onClick = onSwitchToSignIn,
-            modifier = Modifier.align(Alignment.CenterHorizontally).testTag("switch_to_login_button"),
-        ) {
-            Text("Already have an account? Sign in", color = LoyTextSecondary)
-        }
     }
 }

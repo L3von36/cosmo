@@ -32,6 +32,7 @@ import com.loypos.app.data.local.ProductEntity
 import com.loypos.app.data.local.ReceiptEntity
 import com.loypos.app.data.local.ReceiptLineEntity
 import com.loypos.app.data.local.ReceiptWithLines
+import com.loypos.app.data.local.SalaryPaymentEntity
 import com.loypos.app.data.local.SaleEntity
 import com.loypos.app.data.local.SettingEntity
 import com.loypos.app.data.local.SettingsModel
@@ -114,6 +115,7 @@ class LoyPosRepository(private val context: Context) {
     val stockMovementsFlow: Flow<List<StockMovementEntity>> = dao.observeRecentStockMovements()
     val shiftsFlow: Flow<List<ShiftEntity>> = dao.observeShifts()
     val cashMovementsFlow: Flow<List<CashMovementEntity>> = dao.observeCashMovements()
+    val salaryPaymentsFlow: Flow<List<SalaryPaymentEntity>> = dao.observeSalaryPayments()
 
     val receiptsWithLinesFlow: Flow<List<ReceiptWithLines>> = saleDao.observeSalesWithItems()
 
@@ -457,6 +459,105 @@ class LoyPosRepository(private val context: Context) {
 
     suspend fun deleteStaff(id: String) {
         dao.deleteUserById(id)
+    }
+
+    /** Edit an existing seller: name, email, branch and (optionally) a new PIN/password. */
+    suspend fun updateStaff(
+        id: String,
+        nameRaw: String,
+        emailRaw: String,
+        branchId: String?,
+        newPin: String?,
+    ): Result<UserEntity> {
+        val user = dao.getUserById(id)
+            ?: return Result.failure(IllegalArgumentException("This seller no longer exists"))
+        val cleanName = nameRaw.trim()
+        if (cleanName.isEmpty()) {
+            return Result.failure(IllegalArgumentException("Seller name is required"))
+        }
+        val email = AuthCrypto.normalizeEmail(emailRaw)
+        if (!AuthCrypto.isValidEmail(email)) {
+            return Result.failure(IllegalArgumentException("Enter a valid email or username@shop format"))
+        }
+        if (email != user.email && dao.getUserByEmail(email) != null) {
+            return Result.failure(IllegalArgumentException("A user with this email already exists"))
+        }
+        val updated = user.copy(
+            ownerName = cleanName,
+            email = email,
+            branchId = branchId,
+            passwordHash = if (!newPin.isNullOrEmpty()) {
+                if (newPin.length < 6) {
+                    return Result.failure(IllegalArgumentException("PIN/password must be at least 6 characters"))
+                }
+                AuthCrypto.hashPassword(newPin, user.salt)
+            } else {
+                user.passwordHash
+            },
+            updatedAt = nowMs(),
+        )
+        dao.upsertUser(updated)
+        return Result.success(updated)
+    }
+
+    /** Record one salary payment to a staff member (Back Office → Admin). */
+    suspend fun recordSalaryPayment(
+        staffId: String,
+        amountCents: Long,
+        note: String,
+        paidByName: String,
+    ): Result<SalaryPaymentEntity> {
+        if (amountCents <= 0L) {
+            return Result.failure(IllegalArgumentException("Enter an amount greater than zero"))
+        }
+        val staff = dao.getUserById(staffId)
+            ?: return Result.failure(IllegalArgumentException("This seller no longer exists"))
+        val currency = dao.getSetting("currency_symbol")?.takeIf { it.isNotBlank() } ?: "ETB"
+        val payment = SalaryPaymentEntity(
+            id = newId(),
+            staffId = staff.id,
+            staffName = staff.ownerName.ifEmpty { staff.email },
+            staffEmail = staff.email,
+            amountCents = amountCents,
+            currencySymbol = currency,
+            note = note.trim(),
+            paidByName = paidByName.trim(),
+            paidAt = nowMs(),
+        )
+        dao.upsertSalaryPayment(payment)
+        return Result.success(payment)
+    }
+
+    suspend fun deleteSalaryPayment(id: String) {
+        dao.deleteSalaryPaymentById(id)
+    }
+
+    suspend fun salaryPaidTotalFor(staffId: String): Long = dao.salaryPaidTotalFor(staffId)
+
+    /**
+     * The POS owner IS the back-office owner: mirror their (server-verified)
+     * account into the back-office admins table so opening the Back Office is
+     * seamless — no separate "create back-office account" step anywhere.
+     * Same salt + hash scheme, so the same password signs into both.
+     */
+    suspend fun ensureBackOfficeOwnerMirror(owner: UserEntity): BackOfficeUserEntity {
+        backOfficeUserDao.getBackOfficeUserByEmail(owner.email)?.let { existing ->
+            return existing
+        }
+        val mirror = BackOfficeUserEntity(
+            id = newId(),
+            email = owner.email,
+            fullName = owner.ownerName.ifEmpty { "Owner" },
+            shopName = owner.shopName,
+            passwordHash = owner.passwordHash,
+            salt = owner.salt,
+            role = BackOfficeUserEntity.ROLE_ADMIN,
+            active = true,
+            createdAt = nowMs(),
+            updatedAt = nowMs(),
+        )
+        backOfficeUserDao.upsertBackOfficeUser(mirror)
+        return mirror
     }
 
     // --- Back Office Auth (isolated from POS Register sessions) ---
@@ -1254,6 +1355,9 @@ class LoyPosRepository(private val context: Context) {
         val cashMoves = dao.getAllCashMovements().let { list ->
             if (incremental) list.filter { it.createdAt >= sinceMs } else list
         }
+        val salaryPayments = dao.getAllSalaryPayments().let { list ->
+            if (incremental) list.filter { it.paidAt >= sinceMs } else list
+        }
         val syncableSettingKeys = setOf(
             "store_name",
             "currency_symbol",
@@ -1405,6 +1509,21 @@ class LoyPosRepository(private val context: Context) {
                     })
                 }
             })
+            put("salary_payments", JSONArray().apply {
+                salaryPayments.forEach { sp ->
+                    put(JSONObject().apply {
+                        put("id", sp.id)
+                        put("staff_id", sp.staffId)
+                        put("staff_name", sp.staffName)
+                        put("staff_email", sp.staffEmail)
+                        put("amount_cents", sp.amountCents)
+                        put("currency_symbol", sp.currencySymbol)
+                        put("note", sp.note)
+                        put("paid_by_name", sp.paidByName)
+                        put("paid_at", sp.paidAt)
+                    })
+                }
+            })
             put("settings", JSONArray().apply {
                 settings.forEach { st ->
                     put(JSONObject().apply {
@@ -1416,7 +1535,8 @@ class LoyPosRepository(private val context: Context) {
         }
 
         val count = branches.size + categories.size + products.size + customers.size +
-            sales.size + saleItems.size + movements.size + shifts.size + cashMoves.size
+            sales.size + saleItems.size + movements.size + shifts.size + cashMoves.size +
+            salaryPayments.size
         root to count
     }
 
@@ -1646,6 +1766,27 @@ class LoyPosRepository(private val context: Context) {
             if (cashToInsert.isNotEmpty()) {
                 dao.insertCashMovements(cashToInsert)
                 applied += cashToInsert.size
+            }
+
+            val salaryArr = payload.optJSONArray("salary_payments") ?: JSONArray()
+            val salaryToUpsert = mutableListOf<SalaryPaymentEntity>()
+            for (i in 0 until salaryArr.length()) {
+                val o = salaryArr.getJSONObject(i)
+                salaryToUpsert += SalaryPaymentEntity(
+                    id = o.getString("id"),
+                    staffId = o.getString("staff_id"),
+                    staffName = o.optString("staff_name", ""),
+                    staffEmail = o.optString("staff_email", ""),
+                    amountCents = o.optLong("amount_cents", 0L),
+                    currencySymbol = o.optString("currency_symbol", ""),
+                    note = o.optString("note", ""),
+                    paidByName = o.optString("paid_by_name", ""),
+                    paidAt = o.optLong("paid_at", nowMs()),
+                )
+            }
+            if (salaryToUpsert.isNotEmpty()) {
+                dao.upsertSalaryPayments(salaryToUpsert)
+                applied += salaryToUpsert.size
             }
         }
         applied

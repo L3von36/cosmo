@@ -41,6 +41,7 @@ import com.loypos.app.data.local.DaySalesSummary
 import com.loypos.app.data.local.DbStats
 import com.loypos.app.data.local.ItemEntity
 import com.loypos.app.data.local.ReceiptWithLines
+import com.loypos.app.data.local.SalaryPaymentEntity
 import com.loypos.app.data.local.SettingsModel
 import com.loypos.app.data.local.ShiftEntity
 import com.loypos.app.ui.theme.UiScale
@@ -81,10 +82,18 @@ data class LoyPosDataState(
     val movements: List<StockMovementEntity> = emptyList(),
     val shifts: List<ShiftEntity> = emptyList(),
     val cashMovements: List<CashMovementEntity> = emptyList(),
+    val salaryPayments: List<SalaryPaymentEntity> = emptyList(),
 )
 
-data class UiSessionState(
-    val authStage: AuthStage = AuthStage.SPLASH,
+/** Bundled slow-changing back-office data fed into the combined data state. */
+private data class ShiftBundle(
+    val shifts: List<ShiftEntity>,
+    val cashMovements: List<CashMovementEntity>,
+    val backOfficeAdmins: List<BackOfficeUserEntity>,
+    val salaryPayments: List<SalaryPaymentEntity>,
+)
+
+data class UiSessionState(    val authStage: AuthStage = AuthStage.SPLASH,
     val activeWorkspace: AppWorkspace = AppWorkspace.POS,
     val currentUser: UserEntity? = null,
     val backOfficeUser: BackOfficeUserEntity? = null,
@@ -152,7 +161,10 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         repo.shiftsFlow,
         repo.cashMovementsFlow,
         repo.backOfficeUsersFlow,
-    ) { shifts, cashMoves, boAdmins -> Triple(shifts, cashMoves, boAdmins) }
+        repo.salaryPaymentsFlow,
+    ) { shifts, cashMoves, boAdmins, salaryPayments ->
+        ShiftBundle(shifts, cashMoves, boAdmins, salaryPayments)
+    }
 
     private val _inventorySearchQuery = MutableStateFlow("")
     val inventorySearchQuery: StateFlow<String> = _inventorySearchQuery.asStateFlow()
@@ -222,16 +234,17 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         coreDataFlow,
         salesDataFlow,
         shiftDataFlow,
-    ) { core, sales, shiftTriple ->
+    ) { core, sales, shiftBundle ->
         core.copy(
             customers = sales.first,
             receipts = sales.second,
             tickets = sales.third.first,
             staff = sales.third.second,
             movements = sales.third.third,
-            shifts = shiftTriple.first,
-            cashMovements = shiftTriple.second,
-            backOfficeAdmins = shiftTriple.third,
+            shifts = shiftBundle.shifts,
+            cashMovements = shiftBundle.cashMovements,
+            backOfficeAdmins = shiftBundle.backOfficeAdmins,
+            salaryPayments = shiftBundle.salaryPayments,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -372,36 +385,8 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signUp(
-        email: String,
-        password: String,
-        shopName: String,
-        ownerName: String,
-        branchName: String,
-        onDone: (String?) -> Unit,
-    ) {
-        viewModelScope.launch {
-            val res = repo.signUpOwner(email, password, shopName, ownerName, branchName)
-            res.onSuccess { user ->
-                val raw = repo.loadRawSettings()
-                _session.update {
-                    it.copy(
-                        authStage = AuthStage.LOGGED_IN,
-                        activeWorkspace = AppWorkspace.POS,
-                        currentUser = user,
-                        lastUserEmail = user.email,
-                        hasAnyUser = true,
-                        activeBranchId = raw["active_branch"],
-                    )
-                }
-                maybePairDevice(email, password)
-                refreshHealthAndBackups()
-                onDone(null)
-            }.onFailure { err ->
-                onDone(err.message ?: "Sign up failed")
-            }
-        }
-    }
+    // No in-app sign-up: accounts are created on the LoyPOS server
+    // (devices.php → staff accounts) and mirrored here on first sign-in.
 
     fun signOut() {
         viewModelScope.launch {
@@ -503,37 +488,9 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signUpBackOffice(
-        email: String,
-        password: String,
-        fullName: String,
-        shopName: String,
-        onDone: (String?) -> Unit,
-    ) {
-        viewModelScope.launch {
-            val res = repo.signUpBackOfficeAdmin(email, password, fullName, shopName)
-            res.onSuccess { boUser ->
-                val branches = repo.dao.getActiveBranches()
-                val raw = repo.loadRawSettings()
-                val resolvedBranch = _session.value.activeBranchId
-                    ?: raw["active_branch"]?.takeIf { id -> branches.any { it.id == id } }
-                    ?: branches.firstOrNull()?.id
-                _session.update {
-                    it.copy(
-                        authStage = AuthStage.LOGGED_IN,
-                        activeWorkspace = AppWorkspace.BACK_OFFICE,
-                        backOfficeUser = boUser,
-                        hasAnyBackOfficeUser = true,
-                        activeBranchId = resolvedBranch,
-                    )
-                }
-                refreshHealthAndBackups()
-                onDone(null)
-            }.onFailure { err ->
-                onDone(err.message ?: "Back Office account setup failed")
-            }
-        }
-    }
+    // No back-office sign-up screen: the owner is mirrored automatically on
+    // openBackOffice(); extra back-office admins are created in
+    // Back Office → Admin → "Add back-office admin" (addBackOfficeAdmin).
 
     fun signOutBackOffice() {
         viewModelScope.launch {
@@ -557,18 +514,24 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
             // Owner/manager ONLY — sellers can never open the Back Office, no
             // matter which surface they tap from (walkthrough, alerts, bar).
             // This is the single choke point for back-office access.
-            if (_session.value.currentUser?.isOwner != true) {
+            val owner = _session.value.currentUser
+            if (owner?.isOwner != true) {
                 showMessage("Only the shop owner can open the Back Office")
                 return@launch
             }
-            val anyBoUsers = repo.anyBackOfficeUsersExist()
+            // The POS owner IS the back-office owner: mirror the (server-
+            // verified) account into the BO admins table and go straight in —
+            // no "create back-office account" step for the owner, ever.
+            val boUser = repo.ensureBackOfficeOwnerMirror(owner)
             _session.update {
                 it.copy(
                     authStage = AuthStage.LOGGED_IN,
                     activeWorkspace = AppWorkspace.BACK_OFFICE,
-                    hasAnyBackOfficeUser = anyBoUsers,
+                    backOfficeUser = boUser,
+                    hasAnyBackOfficeUser = true,
                 )
             }
+            refreshHealthAndBackups()
         }
     }
 
@@ -1070,6 +1033,40 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             repo.deleteStaff(id)
             showMessage("Seller removed")
+        }
+    }
+
+    fun updateStaff(id: String, name: String, email: String, branchId: String?, newPin: String, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            repo.updateStaff(id, name, email, branchId, newPin.takeIf { it.isNotBlank() })
+                .onSuccess {
+                    showMessage("Seller updated")
+                    onDone(null)
+                }
+                .onFailure { err ->
+                    onDone(err.message ?: "Could not update seller")
+                }
+        }
+    }
+
+    fun paySalary(staffId: String, amountCents: Long, note: String, onDone: (String?) -> Unit) {
+        val paidBy = _session.value.currentUser?.let { it.ownerName.ifEmpty { it.email } } ?: "Owner"
+        viewModelScope.launch {
+            repo.recordSalaryPayment(staffId, amountCents, note, paidBy)
+                .onSuccess {
+                    showMessage("Salary payment recorded")
+                    onDone(null)
+                }
+                .onFailure { err ->
+                    onDone(err.message ?: "Could not record payment")
+                }
+        }
+    }
+
+    fun deleteSalaryPayment(paymentId: String) {
+        viewModelScope.launch {
+            repo.deleteSalaryPayment(paymentId)
+            showMessage("Payment entry removed")
         }
     }
 

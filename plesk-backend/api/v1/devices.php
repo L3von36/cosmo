@@ -420,17 +420,12 @@ if ($users !== []) {
    <h1>LoyPOS — devices &amp; staff</h1>
    <div class="sub">Tier 2 per-device auth · terminals sign in with a staff account and register themselves</div>
   </div>
-  <?php if ($sessionUser !== null): ?>
+  <?php if ($sessionUser !== null || $setupAdmin): ?>
+   <a href="admin.php" style="background:#14532d;color:#bbf7d0;border:1px solid #16a34a;border-radius:8px;padding:.45rem .8rem;font-size:.85rem;text-decoration:none;display:inline-block">Dashboard</a>
    <form method="post" class="inline">
     <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
     <input type="hidden" name="action" value="logout">
-    <button type="submit">Sign out (<?= e($sessionUser['email']) ?>)</button>
-   </form>
-  <?php elseif ($setupAdmin): ?>
-   <form method="post" class="inline">
-    <input type="hidden" name="csrf" value="<?= e($_SESSION['csrf']) ?>">
-    <input type="hidden" name="action" value="logout">
-    <button type="submit" class="danger">End setup-token session</button>
+    <button type="submit">Sign out<?= $sessionUser !== null ? ' (' . e($sessionUser['email']) . ')' : '' ?></button>
    </form>
   <?php endif; ?>
  </div>

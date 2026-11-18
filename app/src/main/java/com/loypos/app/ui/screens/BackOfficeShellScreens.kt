@@ -34,9 +34,11 @@ import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PeopleOutline
 import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.material.icons.outlined.ReceiptLong
@@ -93,11 +95,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.loypos.app.core.formatCents
 import com.loypos.app.core.formatDateTime
 import com.loypos.app.core.formatQty
 import com.loypos.app.core.parseQty
 import com.loypos.app.data.local.BackOfficeUserEntity
 import com.loypos.app.data.local.BranchEntity
+import com.loypos.app.data.local.SalaryPaymentEntity
+import com.loypos.app.data.local.UserEntity
 import com.loypos.app.ui.LoyPosDataState
 import com.loypos.app.ui.LoyPosViewModel
 import com.loypos.app.ui.UiSessionState
@@ -346,6 +351,8 @@ fun BackOfficeAdminScreen(
     val boUser = session.backOfficeUser
     var showAddAdminDialog by remember { mutableStateOf(false) }
     var showAddStaffDialog by remember { mutableStateOf(false) }
+    var paySalaryFor by remember { mutableStateOf<UserEntity?>(null) }
+    var editStaffFor by remember { mutableStateOf<UserEntity?>(null) }
     var showLockConfirm by remember { mutableStateOf(false) }
     var showThresholdDialog by remember { mutableStateOf(false) }
     var showInventoryCsvSheet by remember { mutableStateOf(false) }
@@ -625,6 +632,12 @@ fun BackOfficeAdminScreen(
                                     Text(seller.ownerName.ifEmpty { seller.email }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                     Text("${seller.email} · $branchName", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
                                 }
+                                IconButton(onClick = { paySalaryFor = seller }, modifier = Modifier.size(38.dp)) {
+                                    Icon(Icons.Outlined.Payments, contentDescription = "Pay salary", tint = BackOfficeTeal, modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = { editStaffFor = seller }, modifier = Modifier.size(38.dp)) {
+                                    Icon(Icons.Outlined.Edit, contentDescription = "Edit seller", tint = LoyTextSecondary, modifier = Modifier.size(18.dp))
+                                }
                                 Switch(
                                     checked = seller.active,
                                     onCheckedChange = { viewModel.toggleStaffActive(seller.id, it) },
@@ -647,6 +660,83 @@ fun BackOfficeAdminScreen(
                         Icon(Icons.Outlined.Add, contentDescription = null, tint = BackOfficeTeal, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Add seller account", color = BackOfficeTeal, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // Salary payments — the owner's payroll log, synced to the server.
+            item {
+                SectionHeader("Salary Payments")
+                val currency = data.settings.currencySymbol.ifBlank { "ETB" }
+                val monthStartMs = remember {
+                    val cal = java.util.Calendar.getInstance()
+                    cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    cal.set(java.util.Calendar.MINUTE, 0)
+                    cal.set(java.util.Calendar.SECOND, 0)
+                    cal.set(java.util.Calendar.MILLISECOND, 0)
+                    cal.timeInMillis
+                }
+                val monthTotalCents = data.salaryPayments
+                    .filter { it.paidAt >= monthStartMs }
+                    .sumOf { it.amountCents }
+                GroupCard {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Paid this month", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                            Text(
+                                formatCents(monthTotalCents, currency),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = BackOfficeTeal,
+                            )
+                        }
+                        Text(
+                            "${data.salaryPayments.size} payment${if (data.salaryPayments.size == 1) "" else "s"} total",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                    }
+                    HorizontalDivider(color = LoyBorder)
+                    if (data.salaryPayments.isEmpty()) {
+                        Text(
+                            "No salary payments recorded yet. Tap the payments icon on a seller above to record one.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                            modifier = Modifier.padding(11.dp),
+                        )
+                    } else {
+                        data.salaryPayments.take(10).forEachIndexed { idx, sp ->
+                            if (idx > 0) HorizontalDivider(color = LoyBorder)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(sp.staffName.ifEmpty { sp.staffEmail }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                    val meta = buildString {
+                                        append(formatDateTime(sp.paidAt))
+                                        if (sp.note.isNotBlank()) append(" · ").append(sp.note)
+                                        if (sp.paidByName.isNotBlank()) append(" · by ").append(sp.paidByName)
+                                    }
+                                    Text(meta, style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
+                                }
+                                Text(
+                                    formatCents(sp.amountCents, sp.currencySymbol.ifBlank { currency }),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                IconButton(onClick = { viewModel.deleteSalaryPayment(sp.id) }, modifier = Modifier.size(38.dp)) {
+                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Remove payment entry", tint = LoyError, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -720,6 +810,34 @@ fun BackOfficeAdminScreen(
                 }
             },
             onDismiss = { showAddStaffDialog = false },
+        )
+    }
+
+    paySalaryFor?.let { seller ->
+        PaySalaryDialog(
+            staff = seller,
+            payments = data.salaryPayments.filter { it.staffId == seller.id },
+            onPay = { amountCents, note, onDone ->
+                viewModel.paySalary(seller.id, amountCents, note) { err ->
+                    if (err == null) paySalaryFor = null
+                    onDone(err)
+                }
+            },
+            onDismiss = { paySalaryFor = null },
+        )
+    }
+
+    editStaffFor?.let { seller ->
+        EditStaffDialog(
+            staff = seller,
+            branches = data.branches,
+            onSave = { name, email, branchId, newPin, onDone ->
+                viewModel.updateStaff(seller.id, name, email, branchId, newPin) { err ->
+                    if (err == null) editStaffFor = null
+                    onDone(err)
+                }
+            },
+            onDismiss = { editStaffFor = null },
         )
     }
 
@@ -881,6 +999,132 @@ private fun AddStaffDialog(
                 },
                 modifier = Modifier.heightIn(min = 48.dp),
             ) { Text("Add seller") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PaySalaryDialog(
+    staff: UserEntity,
+    payments: List<SalaryPaymentEntity>,
+    onPay: (Long, String, (String?) -> Unit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var amount by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val currency = payments.firstOrNull()?.currencySymbol?.takeIf { it.isNotBlank() } ?: ""
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pay salary — ${staff.ownerName.ifEmpty { staff.email }}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    staff.email + if (payments.isNotEmpty()) {
+                        " · ${payments.size} payment${if (payments.size == 1) "" else "s"} · total " +
+                            formatCents(payments.sumOf { it.amountCents }, currency)
+                    } else "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LoyTextSecondary,
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it; error = null },
+                    label = { Text("Amount paid") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note (month, period, bonus…)") },
+                    singleLine = true,
+                )
+                if (payments.isNotEmpty()) {
+                    Text("Recent payments", style = MaterialTheme.typography.labelLarge)
+                    payments.take(3).forEach { p ->
+                        Text(
+                            "${formatDateTime(p.paidAt)} — ${formatCents(p.amountCents, p.currencySymbol.ifBlank { currency })}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                    }
+                }
+                if (error != null) Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cents = amount.trim().toDoubleOrNull()?.let { Math.round(it * 100) } ?: 0L
+                    onPay(cents, note) { err -> error = err }
+                },
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text("Record payment") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditStaffDialog(
+    staff: UserEntity,
+    branches: List<BranchEntity>,
+    onSave: (String, String, String?, String, (String?) -> Unit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(staff.ownerName) }
+    var email by remember { mutableStateOf(staff.email) }
+    var newPin by remember { mutableStateOf("") }
+    var branchId by remember { mutableStateOf(staff.branchId ?: branches.firstOrNull()?.id ?: "") }
+    var expanded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit seller") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Seller name") }, singleLine = true)
+                OutlinedTextField(value = email, onValueChange = { email = it; error = null }, label = { Text("Email") }, singleLine = true)
+                OutlinedTextField(
+                    value = newPin,
+                    onValueChange = { newPin = it },
+                    label = { Text("New PIN / password (blank = keep current)") },
+                    singleLine = true,
+                )
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+                    val bName = branches.firstOrNull { it.id == branchId }?.name ?: "Select branch"
+                    OutlinedTextField(
+                        value = bName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Branch") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        branches.forEach { b ->
+                            DropdownMenuItem(text = { Text(b.name) }, onClick = { branchId = b.id; expanded = false })
+                        }
+                    }
+                }
+                if (error != null) Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(name, email, branchId, newPin) { err -> error = err } },
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text("Save changes") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
