@@ -554,6 +554,13 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
 
     fun openBackOffice() {
         viewModelScope.launch {
+            // Owner/manager ONLY — sellers can never open the Back Office, no
+            // matter which surface they tap from (walkthrough, alerts, bar).
+            // This is the single choke point for back-office access.
+            if (_session.value.currentUser?.isOwner != true) {
+                showMessage("Only the shop owner can open the Back Office")
+                return@launch
+            }
             val anyBoUsers = repo.anyBackOfficeUsersExist()
             _session.update {
                 it.copy(

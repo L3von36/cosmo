@@ -174,7 +174,6 @@ fun DashboardScreen(
             QuickActionItem("Back Office", Icons.Outlined.AdminPanelSettings, "dash_action_backoffice") {
                 viewModel.openBackOffice()
             },
-            QuickActionItem("Inventory", Icons.Outlined.Inventory2, "dash_action_inventory", onNavigateToInventory),
             QuickActionItem("Shift", Icons.Outlined.AccessTime, "dash_action_shift", onNavigateToShift),
             QuickActionItem("Customers", Icons.Outlined.PeopleOutline, "dash_action_customers", onNavigateToCustomers),
             QuickActionItem("Reports", Icons.Outlined.Assessment, "dash_action_reports", onNavigateToReports),
@@ -455,7 +454,7 @@ fun DashboardScreen(
                                                 .heightIn(min = metrics.minTouchTarget)
                                                 .testTag("dashboard_manage_catalog_button"),
                                         ) {
-                                            Text("Catalog", maxLines = 1)
+                                            Text("Back Office", maxLines = 1)
                                         }
                                         OutlinedButton(
                                             onClick = onNavigateToStock,

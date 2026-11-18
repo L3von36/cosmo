@@ -40,9 +40,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -117,16 +114,13 @@ fun AuthGateScreen(
     lastUserEmail: String? = null,
     lastBackOfficeEmail: String? = null,
 ) {
-    var workspace by remember(initialWorkspace) { mutableStateOf(initialWorkspace) }
     var showSignUpPos by remember(hasAnyUser) { mutableStateOf(!hasAnyUser) }
-    var showSignUpBo by remember(hasAnyBackOfficeUser) { mutableStateOf(!hasAnyBackOfficeUser) }
 
-    val isBackOffice = workspace == AppWorkspace.BACK_OFFICE
-    val headerBrush = if (isBackOffice) {
-        Brush.linearGradient(listOf(BackOfficeNavy, BackOfficeSlate))
-    } else {
-        Brush.linearGradient(listOf(LoyGreen, LoyGreenAccent))
-    }
+    // The sign-in gate is POS-only: sellers (cashiers) sign in here and get
+    // the register. The Back Office portal is owner territory and is reachable
+    // only from owner surfaces (Dashboard / Settings → Open Back Office), so
+    // an employee can never see it — let alone set up a back-office admin.
+    val headerBrush = Brush.linearGradient(listOf(LoyGreen, LoyGreenAccent))
 
     Column(
         modifier = Modifier
@@ -154,8 +148,8 @@ fun AuthGateScreen(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = if (isBackOffice) Icons.Outlined.AdminPanelSettings else Icons.Outlined.PointOfSale,
-                            contentDescription = if (isBackOffice) "Back Office logo" else "LoyPOS logo",
+                            imageVector = Icons.Outlined.PointOfSale,
+                            contentDescription = "LoyPOS logo",
                             tint = Color.White,
                             modifier = Modifier.size(20.dp),
                         )
@@ -163,23 +157,17 @@ fun AuthGateScreen(
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = when {
-                        isBackOffice && showSignUpBo -> "Set up Back Office"
-                        isBackOffice -> "Back Office Portal"
-                        showSignUpPos -> "Set up your shop"
-                        else -> "Welcome back"
-                    },
+                    text = if (showSignUpPos) "Set up your shop" else "Welcome back",
                     style = MaterialTheme.typography.titleLarge,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = when {
-                        isBackOffice && showSignUpBo -> "Create a dedicated Back Office admin login separate from the POS register."
-                        isBackOffice -> "Sign in with your Back Office credentials to manage analytics, inventory, staff, and branches."
-                        showSignUpPos -> "Create your owner account to start selling offline-first with 300 ready items."
-                        else -> "Sign in as owner or seller to open the POS register."
+                    text = if (showSignUpPos) {
+                        "Create your owner account to start selling offline-first with 300 ready items."
+                    } else {
+                        "Sign in as owner or seller to open the POS register."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.9f),
@@ -198,64 +186,23 @@ fun AuthGateScreen(
                 modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = !isBackOffice,
-                        onClick = { workspace = AppWorkspace.POS },
-                        shape = SegmentedButtonDefaults.itemShape(0, 2),
-                        icon = {
-                            Icon(Icons.Outlined.PointOfSale, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        modifier = Modifier.testTag("auth_mode_pos"),
-                    ) {
-                        Text("POS Register", style = MaterialTheme.typography.labelLarge)
-                    }
-                    SegmentedButton(
-                        selected = isBackOffice,
-                        onClick = { workspace = AppWorkspace.BACK_OFFICE },
-                        shape = SegmentedButtonDefaults.itemShape(1, 2),
-                        icon = {
-                            Icon(Icons.Outlined.AdminPanelSettings, contentDescription = null, modifier = Modifier.size(16.dp))
-                        },
-                        modifier = Modifier.testTag("auth_mode_backoffice"),
-                    ) {
-                        Text("Back Office", style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(13.dp),
                     color = Color.White,
                     tonalElevation = 1.dp,
                 ) {
-                    if (isBackOffice) {
-                        if (showSignUpBo) {
-                            BackOfficeSignUpForm(
-                                viewModel = viewModel,
-                                hasExistingAccount = hasAnyBackOfficeUser,
-                                onSwitchToSignIn = { showSignUpBo = false },
-                            )
-                        } else {
-                            BackOfficeLoginForm(
-                                viewModel = viewModel,
-                                initialEmail = lastBackOfficeEmail,
-                                onSwitchToSignUp = { showSignUpBo = true },
-                            )
-                        }
+                    if (showSignUpPos) {
+                        SignUpForm(
+                            viewModel = viewModel,
+                            onSwitchToSignIn = { showSignUpPos = false },
+                        )
                     } else {
-                        if (showSignUpPos) {
-                            SignUpForm(
-                                viewModel = viewModel,
-                                onSwitchToSignIn = { showSignUpPos = false },
-                            )
-                        } else {
-                            LoginForm(
-                                viewModel = viewModel,
-                                initialEmail = lastUserEmail,
-                                onSwitchToSignUp = { showSignUpPos = true },
-                            )
-                        }
+                        LoginForm(
+                            viewModel = viewModel,
+                            initialEmail = lastUserEmail,
+                            onSwitchToSignUp = { showSignUpPos = true },
+                        )
                     }
                 }
             }

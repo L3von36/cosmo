@@ -207,7 +207,6 @@ fun SettingsScreen(
     var showStoreDialog by remember { mutableStateOf(false) }
     var showTaxDialog by remember { mutableStateOf(false) }
     var showThresholdDialog by remember { mutableStateOf(false) }
-    var showAddStaffDialog by remember { mutableStateOf(false) }
     var editingBranch by remember { mutableStateOf<BranchEntity?>(null) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
@@ -381,55 +380,6 @@ fun SettingsScreen(
                         Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Add branch", color = LoyGreen, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-
-            // Staff
-            item {
-                SectionHeader("Staff & Sellers")
-                GroupCard {
-                    if (data.staff.isEmpty()) {
-                        Text(
-                            "No seller accounts yet. Add cashiers pinned to a specific branch.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = LoyTextSecondary,
-                            modifier = Modifier.padding(11.dp),
-                        )
-                    } else {
-                        data.staff.forEachIndexed { idx, seller ->
-                            if (idx > 0) HorizontalDivider(color = LoyBorder)
-                            val branchName = data.branches.firstOrNull { it.id == seller.branchId }?.name ?: "Branch"
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(seller.ownerName.ifEmpty { seller.email }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                                    Text("${seller.email} · $branchName", style = MaterialTheme.typography.bodySmall, color = LoyTextSecondary)
-                                }
-                                Switch(
-                                    checked = seller.active,
-                                    onCheckedChange = { viewModel.toggleStaffActive(seller.id, it) },
-                                )
-                                IconButton(onClick = { viewModel.deleteStaff(seller.id) }, modifier = Modifier.size(38.dp)) {
-                                    Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete seller", tint = LoyError, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                    HorizontalDivider(color = LoyBorder)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 44.dp)
-                            .clickable { showAddStaffDialog = true }
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Outlined.Add, contentDescription = null, tint = LoyGreen, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Add seller account", color = LoyGreen, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -831,19 +781,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showAddStaffDialog) {
-        AddStaffDialog(
-            branches = data.branches,
-            onSave = { name, email, pin, branchId, onDone ->
-                viewModel.addStaff(name, email, pin, branchId) { err ->
-                    if (err == null) showAddStaffDialog = false
-                    onDone(err)
-                }
-            },
-            onDismiss = { showAddStaffDialog = false },
-        )
-    }
-
     editingBranch?.let { branch ->
         val isNew = data.branches.none { it.id == branch.id }
         BranchEditorDialog(
@@ -1057,61 +994,6 @@ private fun TaxSettingsDialog(
                 },
                 modifier = Modifier.heightIn(min = 48.dp),
             ) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }
-        },
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AddStaffDialog(
-    branches: List<BranchEntity>,
-    onSave: (String, String, String, String, (String?) -> Unit) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var pin by remember { mutableStateOf("") }
-    var branchId by remember { mutableStateOf(branches.firstOrNull()?.id ?: "") }
-    var expanded by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Seller Account") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Seller name") }, singleLine = true)
-                OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, singleLine = true)
-                OutlinedTextField(value = pin, onValueChange = { pin = it }, label = { Text("Password / PIN (min 6 chars)") }, singleLine = true)
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-                    val bName = branches.firstOrNull { it.id == branchId }?.name ?: "Select branch"
-                    OutlinedTextField(
-                        value = bName,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Branch") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
-                    )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        branches.forEach { b ->
-                            DropdownMenuItem(text = { Text(b.name) }, onClick = { branchId = b.id; expanded = false })
-                        }
-                    }
-                }
-                if (error != null) Text(error!!, color = LoyError, style = MaterialTheme.typography.bodySmall)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(name, email, pin, branchId) { err -> error = err }
-                },
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text("Add seller") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancel") }

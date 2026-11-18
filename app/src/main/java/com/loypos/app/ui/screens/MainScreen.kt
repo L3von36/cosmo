@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Dashboard
-import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.material.icons.outlined.ReceiptLong
@@ -52,7 +51,6 @@ import com.loypos.app.ui.navigation.CartRoute
 import com.loypos.app.ui.navigation.CheckoutRoute
 import com.loypos.app.ui.navigation.CustomersRoute
 import com.loypos.app.ui.navigation.DashboardRoute
-import com.loypos.app.ui.navigation.InventoryRoute
 import com.loypos.app.ui.navigation.PaymentRoute
 import com.loypos.app.ui.navigation.ReceiptDetailRoute
 import com.loypos.app.ui.navigation.ReceiptSuccessRoute
@@ -107,22 +105,22 @@ fun MainScreen(
     LaunchedEffect(session.navigateToLowStockTrigger, isOwner) {
         if (session.navigateToLowStockTrigger > 0) {
             if (isOwner) {
-                navController.navigate(InventoryRoute) {
-                    launchSingleTop = true
-                }
+                // Stock counts and product data are managed in the Back Office.
+                viewModel.openBackOffice()
             }
         }
     }
 
     val topLevelDestinations = remember(isOwner) {
         if (isOwner) {
-            // Checkout sits in the MIDDLE (index 2) so the bottom bar can
-            // render it as the elevated centre "sell" action button.
+            // Product management lives ONLY in the Back Office (Catalog tab).
+            // The POS bar is [Dashboard, Receipts, Checkout, Settings] plus a
+            // "Back Office" action entry appended in the bar below — Checkout
+            // lands at index 2, the elevated centre action.
             listOf(
                 TopLevelDestination(DashboardRoute, DashboardRoute::class, "Dashboard", Icons.Outlined.Dashboard, "nav_dashboard"),
-                TopLevelDestination(InventoryRoute, InventoryRoute::class, "Inventory", Icons.Outlined.Inventory2, "nav_inventory"),
-                TopLevelDestination(CheckoutRoute, CheckoutRoute::class, "Checkout", Icons.Outlined.PointOfSale, "nav_checkout"),
                 TopLevelDestination(ReceiptsRoute, ReceiptsRoute::class, "Receipts", Icons.Outlined.ReceiptLong, "nav_receipts"),
+                TopLevelDestination(CheckoutRoute, CheckoutRoute::class, "Checkout", Icons.Outlined.PointOfSale, "nav_checkout"),
                 TopLevelDestination(SettingsRoute, SettingsRoute::class, "Settings", Icons.Outlined.Settings, "nav_settings"),
             )
         } else {
@@ -157,21 +155,34 @@ fun MainScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
                 if (showTopLevelChrome && !useRail) {
+                    // Owner bar: [Dashboard, Receipts, Checkout, Settings] plus
+                    // a "Back Office" action entry — 5 slots with Checkout at
+                    // index 2, the elevated centre action. The Back Office
+                    // entry is not a route: it switches the workspace, which
+                    // only owners can reach (the bar itself only exists here).
+                    val barEntries = topLevelDestinations.map { entry ->
+                        val selected = currentDestination?.hierarchy?.any { it.hasRoute(entry.routeClass) } == true
+                        CompactNavEntry(
+                            label = entry.label,
+                            icon = entry.icon,
+                            selected = selected,
+                            tag = entry.tag,
+                            onClick = { navigateToTopLevel(entry.route) },
+                        )
+                    }.toMutableList()
+                    if (isOwner) {
+                        barEntries += CompactNavEntry(
+                            label = "Back Office",
+                            icon = Icons.Outlined.AdminPanelSettings,
+                            selected = false,
+                            tag = "nav_backoffice",
+                            onClick = { viewModel.openBackOffice() },
+                        )
+                    }
                     CompactBottomNavBar(
-                        entries = topLevelDestinations.map { entry ->
-                            val selected = currentDestination?.hierarchy?.any { it.hasRoute(entry.routeClass) } == true
-                            CompactNavEntry(
-                                label = entry.label,
-                                icon = entry.icon,
-                                selected = selected,
-                                tag = entry.tag,
-                                onClick = { navigateToTopLevel(entry.route) },
-                            )
-                        },
+                        entries = barEntries,
                         selectedColor = LoyGreen,
                         indicatorColor = LoyGreenLight,
-                        // Owner bar has 5 tabs → Checkout (index 2) becomes the
-                        // elevated centre action; cashier bar (4 tabs) stays flat.
                         centerActionIndex = if (isOwner) 2 else null,
                     )
                 }
@@ -213,7 +224,8 @@ fun MainScreen(
                                 session = session,
                                 data = data,
                                 onNavigateToCheckout = { navigateToTopLevel(CheckoutRoute) },
-                                onNavigateToInventory = { navigateToTopLevel(InventoryRoute) },
+                                // Products are managed in the Back Office now.
+                                onNavigateToInventory = { viewModel.openBackOffice() },
                                 onNavigateToStock = { navController.navigate(StockRoute) },
                                 onNavigateToShift = { navController.navigate(ShiftRoute) },
                                 onNavigateToCustomers = { navController.navigate(CustomersRoute) },
@@ -233,15 +245,6 @@ fun MainScreen(
                                 data = data,
                                 onNavigateToCart = { navController.navigate(CartRoute) },
                                 onNavigateToPayment = { navController.navigate(PaymentRoute) },
-                            )
-                        }
-
-                        composable<InventoryRoute> {
-                            InventoryScreen(
-                                viewModel = viewModel,
-                                session = session,
-                                data = data,
-                                onNavigateToStock = { navController.navigate(StockRoute) },
                             )
                         }
 
@@ -375,7 +378,8 @@ fun MainScreen(
             },
             onNavigateToInventory = {
                 viewModel.setWalkthroughCompleted(true)
-                navigateToTopLevel(InventoryRoute)
+                // Products live in the Back Office — send the owner there.
+                viewModel.openBackOffice()
             },
             onNavigateToCheckout = {
                 viewModel.setWalkthroughCompleted(true)
