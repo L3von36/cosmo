@@ -43,6 +43,7 @@ import com.loypos.app.data.local.ItemEntity
 import com.loypos.app.data.local.ReceiptWithLines
 import com.loypos.app.data.local.SettingsModel
 import com.loypos.app.data.local.ShiftEntity
+import com.loypos.app.ui.theme.UiScale
 import com.loypos.app.data.local.ShiftStats
 import com.loypos.app.data.local.StockMovementEntity
 import com.loypos.app.data.local.TicketWithLines
@@ -89,6 +90,8 @@ data class UiSessionState(
     val backOfficeUser: BackOfficeUserEntity? = null,
     val hasAnyUser: Boolean = false,
     val hasAnyBackOfficeUser: Boolean = false,
+    val lastUserEmail: String? = null,
+    val lastBackOfficeEmail: String? = null,
     val activeBranchId: String? = null,
     val backOfficeBranchFilterId: String? = null,
     val cart: List<CartLine> = emptyList(),
@@ -251,14 +254,21 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 !savedBranch.isNullOrEmpty() && branches.any { it.id == savedBranch } -> savedBranch
                 else -> branches.firstOrNull()?.id
             }
-            val initialStage = if (user != null || boUser != null) AuthStage.LOGGED_IN else AuthStage.LOGGED_OUT
+            // Security: EVERY cold start lands on the sign-in gate. The
+            // persisted session (session_user) is only used to prefill the
+            // email on the gate — never to skip authentication. currentUser is
+            // kept so attribution/settings resume the moment the right person
+            // signs back in; the workspace still reopens on the same branch.
+            UiScale.hydrate(raw["ui_scale"]?.toFloatOrNull())
             val initialWorkspace = if (user == null && boUser != null) AppWorkspace.BACK_OFFICE else AppWorkspace.POS
             _session.update {
                 it.copy(
-                    authStage = initialStage,
+                    authStage = AuthStage.LOGGED_OUT,
                     activeWorkspace = initialWorkspace,
                     currentUser = user,
                     backOfficeUser = boUser,
+                    lastUserEmail = user?.email,
+                    lastBackOfficeEmail = boUser?.email,
                     hasAnyUser = anyUsers,
                     hasAnyBackOfficeUser = anyBoUsers,
                     activeBranchId = resolvedBranch,
@@ -344,10 +354,12 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                         authStage = AuthStage.LOGGED_IN,
                         activeWorkspace = AppWorkspace.POS,
                         currentUser = user,
+                        lastUserEmail = user.email,
                         hasAnyUser = true,
                         activeBranchId = branchId,
                     )
                 }
+                maybePairDevice(email, password)
                 refreshHealthAndBackups()
                 onDone(null)
             }.onFailure { err ->
@@ -373,10 +385,12 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                         authStage = AuthStage.LOGGED_IN,
                         activeWorkspace = AppWorkspace.POS,
                         currentUser = user,
+                        lastUserEmail = user.email,
                         hasAnyUser = true,
                         activeBranchId = raw["active_branch"],
                     )
                 }
+                maybePairDevice(email, password)
                 refreshHealthAndBackups()
                 onDone(null)
             }.onFailure { err ->
@@ -401,6 +415,61 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
         }
+    }
+
+    /**
+     * Tier 2 automation: the terminal pairs itself with the Plesk backend the
+     * moment an owner/manager signs in (or signs up) — no separate pairing
+     * step in Settings. Fire-and-forget: the sign-in itself always succeeds
+     * locally, even with no internet; if pairing fails (server account does
+     * not exist yet, or cashier on an unpaired register) the sync row in
+     * Settings explains it and pairing can be retried from Settings.
+     */
+    private fun maybePairDevice(email: String, password: String) {
+        if (com.loypos.app.core.SecurityManager.getSecureToken(appContext).isNotBlank()) {
+            return // already paired — device tokens survive sign-out by design
+        }
+        viewModelScope.launch {
+            val outcome = com.loypos.app.core.CloudSyncClient.registerDevice(
+                appContext,
+                com.loypos.app.core.CloudSyncClient.ENDPOINT,
+                email,
+                password,
+                android.os.Build.MODEL,
+            )
+            when (outcome) {
+                is com.loypos.app.core.CloudSyncClient.RegisterOutcome.Success ->
+                    _session.update {
+                        it.copy(
+                            lastSyncOk = true,
+                            lastSyncMessage = "Paired as \"${outcome.deviceName}\" — syncs with its own device token",
+                        )
+                    }
+                is com.loypos.app.core.CloudSyncClient.RegisterOutcome.Failure ->
+                    _session.update {
+                        it.copy(
+                            lastSyncOk = false,
+                            lastSyncMessage = "Not paired yet: ${outcome.message} — pair from Settings or sign in as owner/manager once",
+                        )
+                    }
+            }
+        }
+    }
+
+    // --- Appearance (global zoom) ---
+    fun previewUiScale(value: Float) {
+        UiScale.preview(value)
+    }
+
+    fun commitUiScale() {
+        viewModelScope.launch {
+            repo.saveSetting("ui_scale", UiScale.scale.toString())
+        }
+    }
+
+    fun resetUiScale() {
+        UiScale.reset()
+        commitUiScale()
     }
 
     // --- Back Office Auth & Workspace Switching ---

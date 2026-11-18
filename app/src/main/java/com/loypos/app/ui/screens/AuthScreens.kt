@@ -114,6 +114,8 @@ fun AuthGateScreen(
     hasAnyUser: Boolean,
     hasAnyBackOfficeUser: Boolean,
     initialWorkspace: AppWorkspace = AppWorkspace.POS,
+    lastUserEmail: String? = null,
+    lastBackOfficeEmail: String? = null,
 ) {
     var workspace by remember(initialWorkspace) { mutableStateOf(initialWorkspace) }
     var showSignUpPos by remember(hasAnyUser) { mutableStateOf(!hasAnyUser) }
@@ -237,6 +239,7 @@ fun AuthGateScreen(
                         } else {
                             BackOfficeLoginForm(
                                 viewModel = viewModel,
+                                initialEmail = lastBackOfficeEmail,
                                 onSwitchToSignUp = { showSignUpBo = true },
                             )
                         }
@@ -249,6 +252,7 @@ fun AuthGateScreen(
                         } else {
                             LoginForm(
                                 viewModel = viewModel,
+                                initialEmail = lastUserEmail,
                                 onSwitchToSignUp = { showSignUpPos = true },
                             )
                         }
@@ -265,6 +269,7 @@ fun BackOfficeAuthScreen(
     hasAnyBackOfficeUser: Boolean,
     canReturnToPos: Boolean,
     storeName: String,
+    lastBackOfficeEmail: String? = null,
 ) {
     if (canReturnToPos) {
         BackHandler { viewModel.switchToPos() }
@@ -369,6 +374,7 @@ fun BackOfficeAuthScreen(
                     } else {
                         BackOfficeLoginForm(
                             viewModel = viewModel,
+                            initialEmail = lastBackOfficeEmail,
                             onSwitchToSignUp = { showSignUp = true },
                         )
                     }
@@ -395,9 +401,10 @@ fun BackOfficeAuthScreen(
 @Composable
 private fun BackOfficeLoginForm(
     viewModel: LoyPosViewModel,
+    initialEmail: String? = null,
     onSwitchToSignUp: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(initialEmail ?: "") }
     var password by remember { mutableStateOf("") }
     var showPwd by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -593,9 +600,10 @@ private fun BackOfficeSignUpForm(
 @Composable
 private fun LoginForm(
     viewModel: LoyPosViewModel,
+    initialEmail: String? = null,
     onSwitchToSignUp: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(initialEmail ?: "") }
     var password by remember { mutableStateOf("") }
     var showPwd by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }

@@ -66,6 +66,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -109,6 +110,7 @@ import com.loypos.app.ui.components.SectionHeader
 import com.loypos.app.ui.components.TopSyncIconButton
 import com.loypos.app.ui.theme.BackOfficeTeal
 import com.loypos.app.ui.theme.LocalLoyMetrics
+import com.loypos.app.ui.theme.UiScale
 import com.loypos.app.ui.theme.LoyBackground
 import com.loypos.app.ui.theme.LoyBorder
 import com.loypos.app.ui.theme.LoyError
@@ -685,6 +687,55 @@ fun SettingsScreen(
                         onClick = { viewModel.checkForAppUpdatesNow() },
                         modifier = Modifier.testTag("settings_check_github_updates"),
                     )
+                }
+            }
+
+            // Appearance — global zoom (fonts, cards, buttons scale together)
+            item {
+                SectionHeader("Appearance")
+                GroupCard {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.FormatSize,
+                                contentDescription = null,
+                                tint = LoyGreen,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("Text & UI size", style = MaterialTheme.typography.bodyMedium)
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                "${(UiScale.scale * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = LoyGreen,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Slider(
+                            value = UiScale.scale,
+                            onValueChange = { viewModel.previewUiScale(it) },
+                            onValueChangeFinished = { viewModel.commitUiScale() },
+                            valueRange = UiScale.MIN..UiScale.MAX,
+                            modifier = Modifier.fillMaxWidth().testTag("settings_ui_scale_slider"),
+                        )
+                        Text(
+                            "Zooms the whole app — fonts, cards and buttons — just like browser zoom. The app resizes live while you drag.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = LoyTextSecondary,
+                        )
+                        if (UiScale.scale > UiScale.DEFAULT + 0.001f || UiScale.scale < UiScale.DEFAULT - 0.001f) {
+                            TextButton(
+                                onClick = { viewModel.resetUiScale() },
+                                modifier = Modifier.testTag("settings_ui_scale_reset"),
+                            ) {
+                                Text("Reset to 100%", color = LoyGreen)
+                            }
+                        }
+                    }
                 }
             }
 
