@@ -699,7 +699,7 @@ fun SettingsScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Outlined.FormatSize,
+                                Icons.Outlined.Tune,
                                 contentDescription = null,
                                 tint = LoyGreen,
                                 modifier = Modifier.size(20.dp),
