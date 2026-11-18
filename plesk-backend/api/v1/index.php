@@ -234,6 +234,66 @@ if ($method === 'POST' && $route === '/devices/verify') {
 // Everything below requires a valid credential (device token or legacy token)
 $auth = authenticate_request($pdo, $providedToken, $config);
 
+// ── Staff account creation from the app's Back Office ───────────────────────
+// The Back Office creates cashier accounts locally (offline-first). This
+// token-protected route lets a signed-in terminal register the same account
+// on the server so devices.php lists it and OTHER terminals can verify its
+// sign-in. The plaintext password arrives only over HTTPS and is bcrypt-
+// hashed here — identical to devices.php's create-account form. Terminals
+// may never mint owner accounts (role is capped at manager).
+if ($method === 'POST' && $route === '/users/create') {
+    $data = json_decode(file_get_contents('php://input') ?: '{}', true);
+    if (!is_array($data)) {
+        json_response(400, ['ok' => false, 'error' => 'Invalid JSON body']);
+    }
+    $email = strtolower(trim((string)($data['email'] ?? '')));
+    $password = (string)($data['password'] ?? '');
+    $name = trim((string)($data['name'] ?? ''));
+    $role = strtolower(trim((string)($data['role'] ?? 'cashier')));
+    if (!in_array($role, ['cashier', 'manager'], true)) {
+        $role = 'cashier';
+    }
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        json_response(400, ['ok' => false, 'error' => 'Valid email required']);
+    }
+    if (strlen($password) < 6) {
+        json_response(400, ['ok' => false, 'error' => 'Password must be at least 6 characters']);
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = :e LIMIT 1');
+        $stmt->execute([':e' => $email]);
+        if ($stmt->fetch()) {
+            // Already on the server — never overwrite an existing account.
+            json_response(200, [
+                'ok' => true,
+                'created' => false,
+                'message' => 'Account already exists on the server',
+            ]);
+        }
+        $ins = $pdo->prepare(
+            'INSERT INTO users (email, password_hash, name, role, status, created_ms)
+             VALUES (:e, :p, :n, :r, \'active\', :c)'
+        );
+        $ins->execute([
+            ':e' => $email,
+            ':p' => password_hash($password, PASSWORD_DEFAULT),
+            ':n' => $name,
+            ':r' => $role,
+            ':c' => $serverTimeMs,
+        ]);
+        json_response(200, [
+            'ok' => true,
+            'created' => true,
+            'id' => (int)$pdo->lastInsertId(),
+        ]);
+    } catch (Throwable $e) {
+        json_response(503, [
+            'ok' => false,
+            'error' => 'Could not create the account — check the users table (install.php step 003_account_auth)',
+        ]);
+    }
+}
+
 if ($method === 'GET' && ($route === '/health' || $route === '/')) {
     $pdo->query('SELECT 1');
     $counts = [

@@ -101,8 +101,8 @@ object CloudSyncClient {
     sealed class VerifyOutcome {
         /** Server confirmed the credentials (200). */
         data class Success(val email: String, val name: String, val role: String) : VerifyOutcome()
-        /** Server reachable and explicitly rejected the credentials (401/403/429). */
-        data class Invalid(val message: String) : VerifyOutcome()
+        /** Server reachable and explicitly rejected the credentials (400/401/403/429). */
+        data class Invalid(val message: String, val httpCode: Int = 0) : VerifyOutcome()
         /** Server unreachable, not deployed, or broken — caller falls back to local sign-in. */
         data class Unreachable(val message: String) : VerifyOutcome()
     }
@@ -127,7 +127,7 @@ object CloudSyncClient {
             return@withContext VerifyOutcome.Unreachable("Server URL must start with https://")
         }
         if (!mail.contains('@') || password.isEmpty()) {
-            return@withContext VerifyOutcome.Invalid("Enter email and password")
+            return@withContext VerifyOutcome.Invalid("Enter email and password", 400)
         }
         try {
             val body = JSONObject().apply {
@@ -142,9 +142,9 @@ object CloudSyncClient {
                     res.json.optString("name"),
                     res.json.optString("role", "owner"),
                 )
-                res.code == 401 -> VerifyOutcome.Invalid(err ?: "Invalid email or password")
-                res.code == 403 -> VerifyOutcome.Invalid(err ?: "This account is disabled")
-                res.code == 429 -> VerifyOutcome.Invalid(err ?: "Too many attempts — wait a minute and retry")
+                res.code == 401 -> VerifyOutcome.Invalid(err ?: "Invalid email or password", 401)
+                res.code == 403 -> VerifyOutcome.Invalid(err ?: "This account is disabled", 403)
+                res.code == 429 -> VerifyOutcome.Invalid(err ?: "Too many attempts — wait a minute and retry", 429)
                 else -> VerifyOutcome.Unreachable(err ?: "Server returned HTTP ${res.code}")
             }
         } catch (e: Exception) {
@@ -155,6 +155,48 @@ object CloudSyncClient {
     sealed class SyncOutcome {
         data class Success(val message: String) : SyncOutcome()
         data class Offline(val message: String) : SyncOutcome()
+    }
+
+    /**
+     * Best-effort: register a staff account created in the app's Back Office
+     * on the Plesk server too, so devices.php lists it and OTHER terminals
+     * can verify its sign-in. The plaintext password travels only over HTTPS
+     * to a token-protected endpoint and is bcrypt-hashed server-side — the
+     * same contract as devices.php's create-account form. Skipped silently
+     * when no sync token is configured (sync not set up) or the server is
+     * unreachable: the account already exists locally and the local sign-in
+     * fallback keeps it working. Returns null on success/skip, or a short
+     * warning string for the caller to surface.
+     */
+    suspend fun createStaffAccount(
+        context: Context,
+        email: String,
+        password: String,
+        name: String,
+    ): String? = withContext(Dispatchers.IO) {
+        val token = resolveSyncToken(context)
+        if (token.isEmpty()) {
+            return@withContext null // sync not configured — local-only account is fine
+        }
+        try {
+            val body = JSONObject().apply {
+                put("email", email.trim().lowercase())
+                put("password", password)
+                put("name", name)
+                put("role", "cashier")
+            }
+            val res = httpPostJson("$ENDPOINT/users/create", token, body)
+            when {
+                res.code in 200..299 -> null
+                res.code == 401 || res.code == 403 ->
+                    "Server rejected the sync token (HTTP ${res.code})"
+                else ->
+                    res.json?.optString("error")?.takeIf { it.isNotEmpty() }
+                        ?: "Server did not accept the account (HTTP ${res.code})"
+            }
+        } catch (e: Exception) {
+            null // offline — the account stays local and still works
+        }
     }
 
     suspend fun syncWithCloud(context: Context, repo: LoyPosRepository): SyncOutcome = withContext(Dispatchers.IO) {

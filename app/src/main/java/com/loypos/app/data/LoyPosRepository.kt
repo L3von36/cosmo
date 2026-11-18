@@ -307,13 +307,14 @@ class LoyPosRepository(private val context: Context) {
     }
 
     /**
-     * Sign-in gate. The SERVER is the authority when reachable: the account
-     * created in devices.php works here even if this terminal has never seen
-     * it — on success the account is mirrored into the local users table
-     * (with a locally hashed copy of the password) so later OFFLINE launches
-     * can sign in too. Only when the server is unreachable does sign-in fall
-     * back to the local table; a definitive server rejection (wrong password,
-     * disabled account, throttle) is never silently bypassed.
+     * Sign-in gate. Server accounts (created in devices.php) are verified by
+     * the server and mirrored locally on first sign-in so later OFFLINE
+     * launches keep working. Accounts created in THIS app's Back Office
+     * (Admin → Add seller) live only in the local table — the server does not
+     * know them yet — so a server 401 falls through to the local check
+     * instead of locking the seller out. Only an explicit server DISABLE
+     * (403) is respected as the owner's remote kill switch and never
+     * bypassed.
      */
     suspend fun signIn(emailRaw: String, password: String): Result<UserEntity> {
         val email = AuthCrypto.normalizeEmail(emailRaw)
@@ -322,6 +323,7 @@ class LoyPosRepository(private val context: Context) {
         }
 
         val server = com.loypos.app.core.CloudSyncClient.ENDPOINT
+        var serverRejection: String? = null
         if (server.startsWith("http")) {
             when (val v = com.loypos.app.core.CloudSyncClient.verifyCredentials(server, email, password)) {
                 is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Success -> {
@@ -333,8 +335,14 @@ class LoyPosRepository(private val context: Context) {
                     val user = upsertMirrorUser(email, v.name, role, password)
                     return Result.success(user)
                 }
-                is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Invalid ->
-                    return Result.failure(IllegalArgumentException(v.message))
+                is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Invalid -> {
+                    if (v.httpCode == 403) {
+                        return Result.failure(IllegalArgumentException(v.message))
+                    }
+                    // 401 (unknown to the server / wrong password) or 429
+                    // (throttle): locally-created accounts must still sign in.
+                    serverRejection = v.message
+                }
                 is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Unreachable -> {
                     // Offline-first: fall through to the local sign-in below
                 }
@@ -344,12 +352,13 @@ class LoyPosRepository(private val context: Context) {
         val user = dao.getUserByEmail(email)
             ?: return Result.failure(
                 IllegalArgumentException(
-                    "No offline account for this email on this device — sign in once while online, or create a shop account",
+                    serverRejection
+                        ?: "No account for this email on this device — add the seller in the Back Office, create it in devices.php, or sign in once while online",
                 ),
             )
         val computed = AuthCrypto.hashPassword(password, user.salt)
         if (!AuthCrypto.safeEquals(computed, user.passwordHash)) {
-            return Result.failure(IllegalArgumentException("Incorrect email or password"))
+            return Result.failure(IllegalArgumentException(serverRejection ?: "Incorrect email or password"))
         }
         if (!user.active) {
             return Result.failure(IllegalArgumentException("This account has been deactivated by the owner"))
@@ -450,6 +459,10 @@ class LoyPosRepository(private val context: Context) {
             updatedAt = now,
         )
         dao.upsertUser(user)
+        // Best-effort: register the account on the Plesk server too so
+        // devices.php lists it and other terminals can verify its sign-in.
+        // Failure is fine — the account stays local and local sign-in works.
+        com.loypos.app.core.CloudSyncClient.createStaffAccount(context, email, password, cleanName)
         return Result.success(user)
     }
 
