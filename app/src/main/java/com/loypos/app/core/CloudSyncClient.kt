@@ -98,6 +98,60 @@ object CloudSyncClient {
         }
     }
 
+    sealed class VerifyOutcome {
+        /** Server confirmed the credentials (200). */
+        data class Success(val email: String, val name: String, val role: String) : VerifyOutcome()
+        /** Server reachable and explicitly rejected the credentials (401/403/429). */
+        data class Invalid(val message: String) : VerifyOutcome()
+        /** Server unreachable, not deployed, or broken — caller falls back to local sign-in. */
+        data class Unreachable(val message: String) : VerifyOutcome()
+    }
+
+    /**
+     * Sign-in gate verification: asks the Plesk backend whether this email +
+     * password is a valid account (the same account created in devices.php —
+     * owner, manager or cashier). Creates nothing and returns no token; the
+     * terminal pairs separately via [registerDevice]. Only a definitive
+     * server rejection counts as [Invalid]; anything else (no internet, old
+     * backend without this route, 5xx) is [Unreachable] so the offline-first
+     * local sign-in still works.
+     */
+    suspend fun verifyCredentials(
+        serverUrl: String,
+        email: String,
+        password: String,
+    ): VerifyOutcome = withContext(Dispatchers.IO) {
+        val base = serverUrl.trim().trimEnd('/')
+        val mail = email.trim().lowercase()
+        if (!base.startsWith("http")) {
+            return@withContext VerifyOutcome.Unreachable("Server URL must start with https://")
+        }
+        if (!mail.contains('@') || password.isEmpty()) {
+            return@withContext VerifyOutcome.Invalid("Enter email and password")
+        }
+        try {
+            val body = JSONObject().apply {
+                put("email", mail)
+                put("password", password)
+            }
+            val res = httpPostJson("$base/devices/verify", "", body)
+            val err = res.json?.optString("error")?.takeIf { it.isNotEmpty() }
+            when {
+                res.code in 200..299 && res.json != null -> VerifyOutcome.Success(
+                    res.json.optString("email", mail),
+                    res.json.optString("name"),
+                    res.json.optString("role", "owner"),
+                )
+                res.code == 401 -> VerifyOutcome.Invalid(err ?: "Invalid email or password")
+                res.code == 403 -> VerifyOutcome.Invalid(err ?: "This account is disabled")
+                res.code == 429 -> VerifyOutcome.Invalid(err ?: "Too many attempts — wait a minute and retry")
+                else -> VerifyOutcome.Unreachable(err ?: "Server returned HTTP ${res.code}")
+            }
+        } catch (e: Exception) {
+            VerifyOutcome.Unreachable("Cannot reach $base (${e.javaClass.simpleName})")
+        }
+    }
+
     sealed class SyncOutcome {
         data class Success(val message: String) : SyncOutcome()
         data class Offline(val message: String) : SyncOutcome()

@@ -359,7 +359,11 @@ class LoyPosViewModel(application: Application) : AndroidViewModel(application) 
                         activeBranchId = branchId,
                     )
                 }
-                maybePairDevice(email, password)
+                // Only owner/manager accounts can add a terminal — cashiers
+                // pair nothing (the register is paired once by the owner).
+                if (user.isOwner) {
+                    maybePairDevice(email, password)
+                }
                 refreshHealthAndBackups()
                 onDone(null)
             }.onFailure { err ->

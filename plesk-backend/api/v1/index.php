@@ -180,6 +180,57 @@ if ($method === 'POST' && ($route === '/devices/register' || $route === '/device
     ]);
 }
 
+// POST /devices/verify — credential check for the app's sign-in gate. The
+// terminal asks "is this email + password a valid account?" WITHOUT creating
+// a device (register does that) and WITHOUT receiving any token. Returns the
+// role so the app can mirror the account locally for offline sign-ins.
+// Shares the per-IP throttle bucket with /devices/register.
+if ($method === 'POST' && $route === '/devices/verify') {
+    $ipKey = 'loypos_reg_' . hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+    $tmpFile = sys_get_temp_dir() . '/' . $ipKey;
+    $hits = is_file($tmpFile) ? (json_decode((string)file_get_contents($tmpFile), true) ?: []) : [];
+    $hits = array_values(array_filter($hits, static fn($t) => $t > $serverTimeMs - 60000));
+    if (count($hits) >= 10) {
+        json_response(429, ['ok' => false, 'error' => 'Too many sign-in attempts from this address — try again in a minute']);
+    }
+    $hits[] = $serverTimeMs;
+    @file_put_contents($tmpFile, json_encode($hits), LOCK_EX);
+
+    $data = json_decode(file_get_contents('php://input') ?: '{}', true);
+    if (!is_array($data)) {
+        json_response(400, ['ok' => false, 'error' => 'Invalid JSON body']);
+    }
+    $email = strtolower(trim((string)($data['email'] ?? '')));
+    $password = (string)($data['password'] ?? '');
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        json_response(400, ['ok' => false, 'error' => 'Enter your account email']);
+    }
+    if ($password === '') {
+        json_response(400, ['ok' => false, 'error' => 'Account password required']);
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT id, email, password_hash, role, status, name FROM users WHERE email = :e LIMIT 1');
+        $stmt->execute([':e' => $email]);
+        $user = $stmt->fetch();
+    } catch (Throwable $e) {
+        json_response(503, ['ok' => false, 'error' => 'Account tables missing — re-run install.php (migration step 003_account_auth)']);
+    }
+    if (!$user || !password_verify($password, (string)$user['password_hash'])) {
+        usleep(400000); // slow down guessing without leaking which field failed
+        json_response(401, ['ok' => false, 'error' => 'Invalid email or password']);
+    }
+    if ($user['status'] !== 'active') {
+        json_response(403, ['ok' => false, 'error' => 'This account is disabled — ask the shop owner']);
+    }
+    json_response(200, [
+        'ok' => true,
+        'email' => (string)$user['email'],
+        'name' => (string)($user['name'] ?? ''),
+        'role' => (string)$user['role'],
+        'server_time_ms' => $serverTimeMs,
+    ]);
+}
+
 // Everything below requires a valid credential (device token or legacy token)
 $auth = authenticate_request($pdo, $providedToken, $config);
 

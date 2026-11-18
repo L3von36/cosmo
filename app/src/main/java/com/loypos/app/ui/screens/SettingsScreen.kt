@@ -76,7 +76,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,10 +85,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.launch
 import com.loypos.app.core.LocalBackup
 import com.loypos.app.core.SecurityManager
 import com.loypos.app.core.formatBytes
@@ -217,7 +214,6 @@ fun SettingsScreen(
     var pendingRestoreBackup by remember { mutableStateOf<LocalBackup?>(null) }
     var showInventoryCsvSheet by remember { mutableStateOf(false) }
     var showTokenDialog by remember { mutableStateOf(false) }
-    var showPairDialog by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -670,14 +666,41 @@ fun SettingsScreen(
                         modifier = Modifier.testTag("settings_configure_token_row"),
                     )
                     HorizontalDivider(color = LoyBorder)
-                    SettingsNavRow(
-                        icon = Icons.Outlined.DevicesOther,
-                        title = "Sign In & Pair This Device (recommended)",
-                        subtitle = "Sign in with your owner/manager account — this terminal registers itself with its own revocable token",
-                        iconTint = LoyGreen,
-                        onClick = { showPairDialog = true },
-                        modifier = Modifier.testTag("settings_pair_device_row"),
-                    )
+                    // Pairing is automatic since the sign-in gate: this row is
+                    // status-only. No sign-in form lives in Settings anymore.
+                    val pairContext = LocalContext.current
+                    val pairedAs = remember { SecurityManager.getCredential(pairContext, "paired_as") }
+                    val devicePaired = remember { SecurityManager.getSecureToken(pairContext).isNotBlank() }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 11.dp, vertical = 10.dp)
+                            .testTag("settings_pair_device_row"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Outlined.DevicesOther,
+                            contentDescription = null,
+                            tint = if (devicePaired) LoyGreen else LoyError,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                if (devicePaired) "This device is paired" else "Device not paired yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                if (devicePaired) {
+                                    "Signed in as ${pairedAs.ifBlank { "an owner/manager account" }} · syncs with its own revocable device token (manage devices in devices.php)"
+                                } else {
+                                    "Pairing happens automatically when you sign in on the launch screen with your owner/manager account — no form here."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = LoyTextSecondary,
+                            )
+                        }
+                    }
                     HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
                         icon = Icons.Outlined.Download,
@@ -891,13 +914,6 @@ fun SettingsScreen(
             onDismiss = { showTokenDialog = false },
         )
     }
-
-    if (showPairDialog) {
-        PairDeviceDialog(
-            initialServerUrl = com.loypos.app.BuildConfig.PLESK_API_BASE_URL,
-            onDismiss = { showPairDialog = false },
-        )
-    }
 }
 
 @Composable
@@ -937,113 +953,6 @@ private fun PleskTokenDialog(
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text("Cancel")
-            }
-        },
-    )
-}
-
-@Composable
-private fun PairDeviceDialog(
-    initialServerUrl: String,
-    onDismiss: () -> Unit,
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var serverUrl by remember { mutableStateOf(initialServerUrl) }
-    var email by remember { mutableStateOf(SecurityManager.getCredential(context, "paired_as")) }
-    var password by remember { mutableStateOf("") }
-    var deviceName by remember { mutableStateOf(android.os.Build.MODEL) }
-    var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Sign In & Pair This Device") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (result == null) {
-                    Text(
-                        text = "Sign in with your owner or manager account — no codes to copy. " +
-                            "This terminal registers itself and receives its own secure token (Android Keystore) " +
-                            "that can be revoked independently in devices.php if the tablet is ever lost.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LoyTextSecondary,
-                    )
-                    OutlinedTextField(
-                        value = serverUrl,
-                        onValueChange = { serverUrl = it },
-                        label = { Text("Server URL") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_url_input"),
-                    )
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("Account email (owner or manager)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_email_input"),
-                    )
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Account password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_password_input"),
-                    )
-                    OutlinedTextField(
-                        value = deviceName,
-                        onValueChange = { deviceName = it },
-                        label = { Text("Device name (e.g. Register 1)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_name_input"),
-                    )
-                } else {
-                    Text(
-                        text = result.orEmpty(),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            if (result == null) {
-                Button(
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            val outcome = com.loypos.app.core.CloudSyncClient.registerDevice(
-                                context, serverUrl, email, password, deviceName,
-                            )
-                            busy = false
-                            result = when (outcome) {
-                                is com.loypos.app.core.CloudSyncClient.RegisterOutcome.Success ->
-                                    "Signed in as \"${outcome.pairedAs}\" — paired as \"${outcome.deviceName}\". " +
-                                        "Cloud sync now uses this device's own token. Run Sync with Plesk MySQL to verify, " +
-                                        "and revoke it anytime from devices.php."
-                                is com.loypos.app.core.CloudSyncClient.RegisterOutcome.Failure -> outcome.message
-                            }
-                        }
-                    },
-                    enabled = !busy && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("settings_pair_save"),
-                ) {
-                    Text(if (busy) "Signing in…" else "Sign In & Pair")
-                }
-            } else {
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("settings_pair_done"),
-                ) {
-                    Text("Done")
-                }
-            }
-        },
-        dismissButton = {
-            if (result == null && !busy) {
-                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("Cancel")
-                }
             }
         },
     )

@@ -304,13 +304,47 @@ class LoyPosRepository(private val context: Context) {
         return Result.success(user)
     }
 
+    /**
+     * Sign-in gate. The SERVER is the authority when reachable: the account
+     * created in devices.php works here even if this terminal has never seen
+     * it — on success the account is mirrored into the local users table
+     * (with a locally hashed copy of the password) so later OFFLINE launches
+     * can sign in too. Only when the server is unreachable does sign-in fall
+     * back to the local table; a definitive server rejection (wrong password,
+     * disabled account, throttle) is never silently bypassed.
+     */
     suspend fun signIn(emailRaw: String, password: String): Result<UserEntity> {
         val email = AuthCrypto.normalizeEmail(emailRaw)
         if (email.isEmpty() || password.isEmpty()) {
             return Result.failure(IllegalArgumentException("Enter email and password"))
         }
+
+        val server = com.loypos.app.core.CloudSyncClient.ENDPOINT
+        if (server.startsWith("http")) {
+            when (val v = com.loypos.app.core.CloudSyncClient.verifyCredentials(server, email, password)) {
+                is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Success -> {
+                    val role = if (v.role.equals("cashier", ignoreCase = true)) {
+                        UserEntity.ROLE_CASHIER
+                    } else {
+                        UserEntity.ROLE_OWNER
+                    }
+                    val user = upsertMirrorUser(email, v.name, role, password)
+                    return Result.success(user)
+                }
+                is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Invalid ->
+                    return Result.failure(IllegalArgumentException(v.message))
+                is com.loypos.app.core.CloudSyncClient.VerifyOutcome.Unreachable -> {
+                    // Offline-first: fall through to the local sign-in below
+                }
+            }
+        }
+
         val user = dao.getUserByEmail(email)
-            ?: return Result.failure(IllegalArgumentException("Incorrect email or password"))
+            ?: return Result.failure(
+                IllegalArgumentException(
+                    "No offline account for this email on this device — sign in once while online, or create a shop account",
+                ),
+            )
         val computed = AuthCrypto.hashPassword(password, user.salt)
         if (!AuthCrypto.safeEquals(computed, user.passwordHash)) {
             return Result.failure(IllegalArgumentException("Incorrect email or password"))
@@ -323,6 +357,54 @@ class LoyPosRepository(private val context: Context) {
             dao.upsertSetting(SettingEntity("active_branch", user.branchId))
         }
         return Result.success(user)
+    }
+
+    /**
+     * Mirror a server-verified account into the local users table so the
+     * sign-in gate keeps working offline after the first online sign-in.
+     * Keeps the existing local id when the email already exists (sales
+     * attribution by userId stays intact) and refreshes password, role and
+     * name from the server.
+     */
+    private suspend fun upsertMirrorUser(
+        email: String,
+        serverName: String,
+        role: String,
+        password: String,
+    ): UserEntity {
+        val salt = AuthCrypto.newSalt()
+        val hash = AuthCrypto.hashPassword(password, salt)
+        val now = nowMs()
+        val existing = dao.getUserByEmail(email)
+        val user = if (existing != null) {
+            existing.copy(
+                passwordHash = hash,
+                salt = salt,
+                role = role,
+                ownerName = serverName.ifBlank { existing.ownerName },
+                active = true,
+                updatedAt = now,
+            )
+        } else {
+            UserEntity(
+                id = newId(),
+                email = email,
+                shopName = "",
+                ownerName = serverName,
+                passwordHash = hash,
+                salt = salt,
+                createdAt = now,
+                role = role,
+                branchId = null,
+                active = true,
+                updatedAt = now,
+            )
+        }
+        db.withTransaction {
+            dao.upsertUser(user)
+            dao.upsertSetting(SettingEntity("session_user", user.id))
+        }
+        return user
     }
 
     suspend fun signOut() {
