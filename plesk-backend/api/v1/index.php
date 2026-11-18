@@ -29,14 +29,7 @@ function read_bearer_token(): string {
     return trim((string)($_SERVER['HTTP_X_SYNC_TOKEN'] ?? ''));
 }
 
-$expectedToken = (string)($config['sync_token'] ?? '');
 $providedToken = read_bearer_token();
-if ($expectedToken === '' || $expectedToken === 'YOUR_PLESK_SYNC_TOKEN') {
-    json_response(503, ['ok' => false, 'error' => 'SYNC_TOKEN is not configured on Plesk server']);
-}
-if ($providedToken === '' || !hash_equals($expectedToken, $providedToken)) {
-    json_response(401, ['ok' => false, 'error' => 'Unauthorized: invalid sync token']);
-}
 
 try {
     $dsn = sprintf(
@@ -65,6 +58,113 @@ if ($route === '' || $route === false) {
 $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
 $serverTimeMs = (int) round(microtime(true) * 1000);
 
+// ── Tier 2 device auth ──────────────────────────────────────────────────────
+// Each terminal pairs once (POST /pair with a one-time code from devices.php)
+// and receives its own long-lived device token, stored only as a SHA-256 hash
+// in `devices`. The legacy shared sync_token stays accepted as a fallback
+// until `require_device_auth` is set to '1' in config.php (toggle in devices.php).
+function authenticate_request(PDO $pdo, string $providedToken, array $config): array {
+    $legacyToken = (string)($config['sync_token'] ?? '');
+    $requireDevice = (string)($config['require_device_auth'] ?? '0') === '1';
+    if (
+        !$requireDevice && $providedToken !== ''
+        && $legacyToken !== '' && $legacyToken !== 'YOUR_PLESK_SYNC_TOKEN'
+        && hash_equals($legacyToken, $providedToken)
+    ) {
+        return ['mode' => 'legacy', 'device' => null];
+    }
+    if ($providedToken !== '') {
+        $device = false;
+        try {
+            $stmt = $pdo->prepare('SELECT id, name, branch_id, status FROM devices WHERE token_hash = :h LIMIT 1');
+            $stmt->execute([':h' => hash('sha256', $providedToken)]);
+            $device = $stmt->fetch();
+        } catch (Throwable $e) {
+            $device = false; // devices table not migrated yet — fall through
+        }
+        if ($device !== false) {
+            if ($device['status'] === 'active') {
+                $pdo->prepare('UPDATE devices SET last_seen_ms = :t WHERE id = :id')
+                    ->execute([':t' => (int) round(microtime(true) * 1000), ':id' => (int) $device['id']]);
+                $device['id'] = (int) $device['id'];
+                return ['mode' => 'device', 'device' => $device];
+            }
+            json_response(401, ['ok' => false, 'error' => 'This device has been revoked', 'device_revoked' => true]);
+        }
+    }
+    json_response(401, ['ok' => false, 'error' => $requireDevice
+        ? 'Unauthorized: pair this device first (app Settings → Pair This Device) or use a valid device token'
+        : 'Unauthorized: invalid sync or device token']);
+}
+
+// POST /pair — bootstrap endpoint: exchanges a one-time pairing code for a
+// device token. No bearer auth here (a brand-new terminal has no token yet);
+// protected instead by single-use codes + per-IP throttling.
+if ($method === 'POST' && ($route === '/pair' || $route === '/devices/pair')) {
+    $ipKey = 'loypos_pair_' . hash('sha256', (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+    $tmpFile = sys_get_temp_dir() . '/' . $ipKey;
+    $hits = is_file($tmpFile) ? (json_decode((string)file_get_contents($tmpFile), true) ?: []) : [];
+    $hits = array_values(array_filter($hits, static fn($t) => $t > $serverTimeMs - 60000));
+    if (count($hits) >= 10) {
+        json_response(429, ['ok' => false, 'error' => 'Too many pairing attempts from this address — try again in a minute']);
+    }
+    $hits[] = $serverTimeMs;
+    @file_put_contents($tmpFile, json_encode($hits), LOCK_EX);
+
+    $data = json_decode(file_get_contents('php://input') ?: '{}', true);
+    if (!is_array($data)) {
+        json_response(400, ['ok' => false, 'error' => 'Invalid JSON body']);
+    }
+    $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($data['code'] ?? '')));
+    if (!preg_match('/^[A-HJ-NP-Z2-9]{8}$/', $code)) {
+        json_response(400, ['ok' => false, 'error' => 'Pairing code must be 8 characters (letters/digits — codes never contain 0 O 1 I)']);
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT id, name_hint, expires_ms, used_ms FROM pairing_codes WHERE code_hash = :h LIMIT 1');
+        $stmt->execute([':h' => hash('sha256', $code)]);
+        $pc = $stmt->fetch();
+    } catch (Throwable $e) {
+        json_response(503, ['ok' => false, 'error' => 'Pairing tables missing — re-run install.php (migration step 002_device_auth)']);
+    }
+    if (!$pc || $pc['used_ms'] !== null || (int)$pc['expires_ms'] < $serverTimeMs) {
+        usleep(400000); // slow down guessing without leaking which case failed
+        json_response($pc ? 410 : 404, ['ok' => false, 'error' => !$pc
+            ? 'Pairing code not found — check for typos'
+            : ($pc['used_ms'] !== null ? 'Pairing code already used' : 'Pairing code expired — generate a new one in devices.php')]);
+    }
+    $deviceToken = bin2hex(random_bytes(32)); // shown once, stored hashed
+    $deviceName = mb_substr(trim((string)($data['name'] ?? '')) ?: (string)($pc['name_hint'] ?? ''), 0, 100) ?: 'Terminal';
+    try {
+        $pdo->beginTransaction();
+        $claim = $pdo->prepare('UPDATE pairing_codes SET used_ms = :u WHERE id = :id AND used_ms IS NULL');
+        $claim->execute([':u' => $serverTimeMs, ':id' => (int)$pc['id']]);
+        if ($claim->rowCount() !== 1) {
+            throw new RuntimeException('code-taken');
+        }
+        $ins = $pdo->prepare("INSERT INTO devices (name, branch_id, token_hash, status, last_seen_ms, created_ms) VALUES (:n, NULL, :h, 'active', :seen, :made)");
+        $ins->execute([':n' => $deviceName, ':h' => hash('sha256', $deviceToken), ':seen' => $serverTimeMs, ':made' => $serverTimeMs]);
+        $deviceId = (int)$pdo->lastInsertId();
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('LoyPOS pair failed: ' . $e->getMessage());
+        json_response(409, ['ok' => false, 'error' => 'Pairing code already used']);
+    }
+    json_response(201, [
+        'ok' => true,
+        'device_id' => $deviceId,
+        'device_name' => $deviceName,
+        'device_token' => $deviceToken,
+        'token_type' => 'device',
+        'server_time_ms' => $serverTimeMs,
+    ]);
+}
+
+// Everything below requires a valid credential (device token or legacy token)
+$auth = authenticate_request($pdo, $providedToken, $config);
+
 if ($method === 'GET' && ($route === '/health' || $route === '/')) {
     $pdo->query('SELECT 1');
     $counts = [
@@ -77,8 +177,20 @@ if ($method === 'GET' && ($route === '/health' || $route === '/')) {
         'status' => 'ok',
         'database' => 'mysql',
         'server_time_ms' => $serverTimeMs,
+        'auth' => [
+            'mode' => $auth['mode'],
+            'device_id' => $auth['device']['id'] ?? null,
+            'device_name' => $auth['device']['name'] ?? null,
+        ],
         'counts' => $counts,
     ]);
+}
+
+if ($method === 'GET' && $route === '/devices/me') {
+    if ($auth['mode'] !== 'device') {
+        json_response(200, ['ok' => true, 'mode' => 'legacy', 'message' => 'Running on the legacy shared token — pair this device for independent credentials']);
+    }
+    json_response(200, ['ok' => true, 'mode' => 'device', 'device' => $auth['device']]);
 }
 
 if ($method === 'POST' && $route === '/sync/push') {

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.DevicesOther
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.HealthAndSafety
@@ -74,6 +75,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,6 +87,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 import com.loypos.app.core.LocalBackup
 import com.loypos.app.core.formatBytes
 import com.loypos.app.core.formatDateTime
@@ -210,6 +213,7 @@ fun SettingsScreen(
     var pendingRestoreBackup by remember { mutableStateOf<LocalBackup?>(null) }
     var showInventoryCsvSheet by remember { mutableStateOf(false) }
     var showTokenDialog by remember { mutableStateOf(false) }
+    var showPairDialog by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -663,6 +667,15 @@ fun SettingsScreen(
                     )
                     HorizontalDivider(color = LoyBorder)
                     SettingsNavRow(
+                        icon = Icons.Outlined.DevicesOther,
+                        title = "Pair This Device (recommended)",
+                        subtitle = "One-time code from devices.php → this terminal gets its own revocable token",
+                        iconTint = LoyGreen,
+                        onClick = { showPairDialog = true },
+                        modifier = Modifier.testTag("settings_pair_device_row"),
+                    )
+                    HorizontalDivider(color = LoyBorder)
+                    SettingsNavRow(
                         icon = Icons.Outlined.Download,
                         title = "Check for GitHub App Updates",
                         subtitle = "Query GitHub Releases API for newer APK version",
@@ -825,6 +838,13 @@ fun SettingsScreen(
             onDismiss = { showTokenDialog = false },
         )
     }
+
+    if (showPairDialog) {
+        PairDeviceDialog(
+            initialServerUrl = com.loypos.app.BuildConfig.PLESK_API_BASE_URL,
+            onDismiss = { showPairDialog = false },
+        )
+    }
 }
 
 @Composable
@@ -864,6 +884,100 @@ private fun PleskTokenDialog(
         dismissButton = {
             TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun PairDeviceDialog(
+    initialServerUrl: String,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var serverUrl by remember { mutableStateOf(initialServerUrl) }
+    var code by remember { mutableStateOf("") }
+    var deviceName by remember { mutableStateOf(android.os.Build.MODEL) }
+    var busy by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("Pair This Device") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (result == null) {
+                    Text(
+                        text = "Step 1 — open devices.php on your Plesk backend and generate a one-time pairing code (valid 15 minutes). " +
+                            "Step 2 — enter it here. This terminal receives its own secure token (Android Keystore) and can be revoked " +
+                            "independently in devices.php if the tablet is ever lost.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LoyTextSecondary,
+                    )
+                    OutlinedTextField(
+                        value = serverUrl,
+                        onValueChange = { serverUrl = it },
+                        label = { Text("Server URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_url_input"),
+                    )
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        label = { Text("Pairing code (8 characters)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_code_input"),
+                    )
+                    OutlinedTextField(
+                        value = deviceName,
+                        onValueChange = { deviceName = it },
+                        label = { Text("Device name (e.g. Register 1)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_pair_name_input"),
+                    )
+                } else {
+                    Text(
+                        text = result.orEmpty(),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            if (result == null) {
+                Button(
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            val outcome = com.loypos.app.core.CloudSyncClient.pairDevice(context, serverUrl, code, deviceName)
+                            busy = false
+                            result = when (outcome) {
+                                is com.loypos.app.core.CloudSyncClient.PairOutcome.Success ->
+                                    "Paired as \"${outcome.deviceName}\". Cloud sync now uses this device's own token. " +
+                                        "Run Sync with Plesk MySQL to verify, and revoke it anytime from devices.php."
+                                is com.loypos.app.core.CloudSyncClient.PairOutcome.Failure -> outcome.message
+                            }
+                        }
+                    },
+                    enabled = !busy && code.isNotBlank(),
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("settings_pair_save"),
+                ) {
+                    Text(if (busy) "Pairing…" else "Pair")
+                }
+            } else {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("settings_pair_done"),
+                ) {
+                    Text("Done")
+                }
+            }
+        },
+        dismissButton = {
+            if (result == null && !busy) {
+                TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Cancel")
+                }
             }
         },
     )

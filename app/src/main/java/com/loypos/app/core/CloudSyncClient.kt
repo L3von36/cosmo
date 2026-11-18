@@ -12,7 +12,10 @@ import java.net.URL
 
 /**
  * Plesk MySQL/MariaDB HTTPS REST sync client targeting novelsapps.com.et.
- * Uses EncryptedTokenManager (Android Keystore / EncryptedSharedPreferences) or BuildConfig.PLESK_SYNC_TOKEN.
+ * Credentials (Tier 2): a per-device token issued by POST /pair (one-time
+ * pairing code from devices.php), stored via SecurityManager (Android Keystore /
+ * EncryptedSharedPreferences) and falling back to BuildConfig.PLESK_SYNC_TOKEN.
+ * The server also accepts the legacy shared token until device auth is required.
  * Local Room SQLite remains the offline-first runtime store so POS checkout never blocks.
  */
 object CloudSyncClient {
@@ -26,6 +29,64 @@ object CloudSyncClient {
             .trim()
             .takeIf { it.isNotEmpty() && it != "YOUR_PLESK_SYNC_TOKEN" }
             .orEmpty()
+    }
+
+    sealed class PairOutcome {
+        data class Success(val deviceId: Long, val deviceName: String) : PairOutcome()
+        data class Failure(val message: String) : PairOutcome()
+    }
+
+    /**
+     * Tier 2 pairing: exchange the one-time pairing code shown in devices.php
+     * for this terminal's own device token. On success the token is stored in
+     * the same secure slot used for sync (SecurityManager.saveSecureToken) —
+     * from then on resolveSyncToken() returns the device token and every sync
+     * call authenticates as this specific, individually revocable device.
+     */
+    suspend fun pairDevice(
+        context: Context,
+        serverUrl: String,
+        pairingCode: String,
+        deviceName: String,
+    ): PairOutcome = withContext(Dispatchers.IO) {
+        val base = serverUrl.trim().trimEnd('/')
+        val code = pairingCode.trim().uppercase()
+        if (!base.startsWith("http")) {
+            return@withContext PairOutcome.Failure("Server URL must start with https://")
+        }
+        if (code.length != 8) {
+            return@withContext PairOutcome.Failure("Pairing code is 8 characters — generate one in devices.php")
+        }
+        try {
+            val body = JSONObject().apply {
+                put("code", code)
+                put("name", deviceName.trim().ifEmpty { android.os.Build.MODEL })
+            }
+            val res = httpPostJson("$base/pair", "", body)
+            val err = res.json?.optString("error")?.takeIf { it.isNotEmpty() }
+            when {
+                res.code in 200..299 && res.json != null -> {
+                    val deviceToken = res.json.optString("device_token").orEmpty()
+                    if (deviceToken.isEmpty()) {
+                        PairOutcome.Failure("Server accepted the code but returned no token (HTTP ${res.code})")
+                    } else {
+                        SecurityManager.saveSecureToken(context, deviceToken)
+                        SecurityManager.saveCredential(context, "device_id", res.json.optLong("device_id", -1L).toString())
+                        SecurityManager.saveCredential(context, "device_name", res.json.optString("device_name"))
+                        PairOutcome.Success(
+                            res.json.optLong("device_id", -1L),
+                            res.json.optString("device_name").ifEmpty { "Terminal" },
+                        )
+                    }
+                }
+                res.code == 410 -> PairOutcome.Failure(err ?: "Pairing code already used or expired — generate a new one")
+                res.code == 404 -> PairOutcome.Failure(err ?: "Pairing code not found — check for typos")
+                res.code == 429 -> PairOutcome.Failure(err ?: "Too many attempts — wait a minute and retry")
+                else -> PairOutcome.Failure(err ?: "Pairing failed (HTTP ${res.code})")
+            }
+        } catch (e: Exception) {
+            PairOutcome.Failure("Cannot reach $base (${e.javaClass.simpleName})")
+        }
     }
 
     sealed class SyncOutcome {

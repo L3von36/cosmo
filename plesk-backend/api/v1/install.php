@@ -50,6 +50,7 @@ $countsAfter = [];
 $tables = [
     'branches', 'categories', 'products', 'customers', 'sales', 'sale_items',
     'stock_movements', 'shifts', 'cash_movements', 'shop_settings', 'schema_migrations',
+    'devices', 'pairing_codes',
 ];
 
 // ── Migration steps (add new steps below; never edit an applied step) ───────
@@ -177,6 +178,30 @@ $MIGRATIONS = [
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             step_id VARCHAR(64) NOT NULL PRIMARY KEY,
             applied_at BIGINT NOT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+    ],
+    // Tier 2 per-device auth: one token per terminal, issued via one-time
+    // pairing codes (devices.php admin page → POST /pair on the device).
+    '002_device_auth' => [
+        "CREATE TABLE IF NOT EXISTS devices (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            branch_id VARCHAR(64) NULL,
+            token_hash CHAR(64) NOT NULL,
+            status ENUM('active','revoked') NOT NULL DEFAULT 'active',
+            last_seen_ms BIGINT UNSIGNED NULL,
+            created_ms BIGINT UNSIGNED NOT NULL,
+            UNIQUE KEY uq_devices_token_hash (token_hash)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        "CREATE TABLE IF NOT EXISTS pairing_codes (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            code_hash CHAR(64) NOT NULL,
+            name_hint VARCHAR(100) NULL,
+            expires_ms BIGINT UNSIGNED NOT NULL,
+            used_ms BIGINT UNSIGNED NULL,
+            created_ms BIGINT UNSIGNED NOT NULL,
+            UNIQUE KEY uq_pairing_code_hash (code_hash),
+            INDEX idx_pairing_expires (expires_ms)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
     ],
 ];
@@ -394,7 +419,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
  <p class="note">Next steps: check <code>https://novelsapps.com.et/api/v1/health</code> with header
  <code>Authorization: Bearer &lt;sync_token&gt;</code>, then <strong>delete <code>install.php</code></strong> via Plesk File Manager.
- The generated <code>config.php</code> stays in <code>httpdocs/api/v1/</code>.</p>
+ The generated <code>config.php</code> stays in <code>httpdocs/api/v1/</code>.
+ For per-device security (Tier 2): open <code>devices.php?token=<?= e(SETUP_TOKEN) ?></code> — generate a one-time
+ pairing code per POS terminal and pair it in the app (Settings → Pair This Device). The shared sync_token keeps
+ working as a fallback until you switch on &quot;require device auth&quot; in devices.php.</p>
 
 <?php else: ?>
  <?php if ($locked): ?><p class="note" style="color:#facc15">install.lock exists — a previous migration already ran. To re-run, delete <code>httpdocs/api/v1/install.lock</code> in File Manager.</p><?php endif; ?>
