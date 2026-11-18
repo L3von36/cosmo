@@ -116,10 +116,12 @@ fun MainScreen(
 
     val topLevelDestinations = remember(isOwner) {
         if (isOwner) {
+            // Checkout sits in the MIDDLE (index 2) so the bottom bar can
+            // render it as the elevated centre "sell" action button.
             listOf(
                 TopLevelDestination(DashboardRoute, DashboardRoute::class, "Dashboard", Icons.Outlined.Dashboard, "nav_dashboard"),
-                TopLevelDestination(CheckoutRoute, CheckoutRoute::class, "Checkout", Icons.Outlined.PointOfSale, "nav_checkout"),
                 TopLevelDestination(InventoryRoute, InventoryRoute::class, "Inventory", Icons.Outlined.Inventory2, "nav_inventory"),
+                TopLevelDestination(CheckoutRoute, CheckoutRoute::class, "Checkout", Icons.Outlined.PointOfSale, "nav_checkout"),
                 TopLevelDestination(ReceiptsRoute, ReceiptsRoute::class, "Receipts", Icons.Outlined.ReceiptLong, "nav_receipts"),
                 TopLevelDestination(SettingsRoute, SettingsRoute::class, "Settings", Icons.Outlined.Settings, "nav_settings"),
             )
@@ -168,6 +170,9 @@ fun MainScreen(
                         },
                         selectedColor = LoyGreen,
                         indicatorColor = LoyGreenLight,
+                        // Owner bar has 5 tabs → Checkout (index 2) becomes the
+                        // elevated centre action; cashier bar (4 tabs) stays flat.
+                        centerActionIndex = if (isOwner) 2 else null,
                     )
                 }
             },

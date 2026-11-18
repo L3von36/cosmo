@@ -2,6 +2,7 @@ package com.loypos.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,56 +112,119 @@ fun CompactBottomNavBar(
     selectedColor: Color,
     indicatorColor: Color,
     modifier: Modifier = Modifier,
+    centerActionIndex: Int? = null,
 ) {
     val metrics = LocalLoyMetrics.current
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = LoySurface,
-        tonalElevation = 2.dp,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
-            HorizontalDivider(color = LoyBorder)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = metrics.minTouchTarget.coerceAtLeast(52.dp)),
-                verticalAlignment = Alignment.CenterVertically,
+    val center = centerActionIndex?.takeIf { it in entries.indices }
+    val barHeight = 62.dp
+    // Headroom the centre button pokes above the bar (halo 70dp centred 6dp
+    // above the bar's top edge → 41dp of the headroom is above the surface).
+    val overhang = 41.dp
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.fillMaxWidth().height(overhang))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = LoySurface,
+                tonalElevation = 2.dp,
             ) {
-                entries.forEach { entry ->
-                    Column(
+                Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+                    HorizontalDivider(color = LoyBorder)
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = metrics.minTouchTarget)
-                            .clickable(onClick = entry.onClick)
-                            .padding(horizontal = 2.dp, vertical = 4.dp)
-                            .testTag(entry.tag),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
+                            .fillMaxWidth()
+                            .heightIn(min = barHeight)
+                            .heightIn(min = metrics.minTouchTarget.coerceAtLeast(barHeight)),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(if (entry.selected) indicatorColor else Color.Transparent)
-                                .padding(horizontal = 11.dp, vertical = 2.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = entry.icon,
-                                contentDescription = entry.label,
-                                tint = if (entry.selected) selectedColor else LoyTextSecondary,
-                                modifier = Modifier.size(18.dp),
-                            )
+                        entries.forEachIndexed { index, entry ->
+                            if (index == center) {
+                                // The floating button is drawn as an overlay
+                                // above the bar; this slot carries the label.
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = metrics.minTouchTarget)
+                                        .clickable(onClick = entry.onClick)
+                                        .padding(horizontal = 2.dp, vertical = 4.dp)
+                                        .testTag(entry.tag),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Spacer(Modifier.size(22.dp))
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = entry.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = selectedColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = metrics.minTouchTarget)
+                                        .clickable(onClick = entry.onClick)
+                                        .padding(horizontal = 2.dp, vertical = 4.dp)
+                                        .testTag(entry.tag),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = entry.icon,
+                                        contentDescription = entry.label,
+                                        tint = if (entry.selected) selectedColor else LoyTextPrimary,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                    Spacer(Modifier.height(2.dp))
+                                    Text(
+                                        text = entry.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = if (entry.selected) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = if (entry.selected) selectedColor else LoyTextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = entry.label,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (entry.selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (entry.selected) selectedColor else LoyTextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                     }
+                }
+            }
+        }
+
+        // Floating centre action: white halo (reads as a notch cut into the
+        // bar), thick selected-colour ring, icon in the middle.
+        if (center != null) {
+            val action = entries[center]
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .size(70.dp)
+                    .clip(CircleShape)
+                    .background(LoySurface)
+                    .clickable(onClick = action.onClick)
+                    .testTag(action.tag),
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(LoySurface)
+                        .border(4.dp, selectedColor, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = action.icon,
+                        contentDescription = action.label,
+                        tint = selectedColor,
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }
